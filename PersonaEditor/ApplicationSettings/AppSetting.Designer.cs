@@ -238,5 +238,85 @@ namespace PersonaEditor.ApplicationSettings {
                 this["FTDEncoding"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("P4")]
+        public string BatchSourceFont {
+            get { return ((string)(this["BatchSourceFont"])); }
+            set { this["BatchSourceFont"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("P4")]
+        public string BatchDestinationFont {
+            get { return ((string)(this["BatchDestinationFont"])); }
+            set { this["BatchDestinationFont"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool BatchRemoveSplit {
+            get { return ((bool)(this["BatchRemoveSplit"])); }
+            set { this["BatchRemoveSplit"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool BatchUseMap {
+            get { return ((bool)(this["BatchUseMap"])); }
+            set { this["BatchUseMap"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("%FN %MSGIND %STRIND %I %I %NEWSTR")]
+        public string BatchMap {
+            get { return ((string)(this["BatchMap"])); }
+            set { this["BatchMap"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool BatchAutoWrap {
+            get { return ((bool)(this["BatchAutoWrap"])); }
+            set { this["BatchAutoWrap"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("580")]
+        public int BatchAutoWidth {
+            get { return ((int)(this["BatchAutoWidth"])); }
+            set { this["BatchAutoWidth"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool BatchLineByLine {
+            get { return ((bool)(this["BatchLineByLine"])); }
+            set { this["BatchLineByLine"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool BatchUseEncoding {
+            get { return ((bool)(this["BatchUseEncoding"])); }
+            set { this["BatchUseEncoding"] = value; }
+        }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("UTF-8")]
+        public string BatchEncoding {
+            get { return ((string)(this["BatchEncoding"])); }
+            set { this["BatchEncoding"] = value; }
+        }
     }
 }

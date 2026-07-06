@@ -5,29 +5,29 @@ using System.Collections.ObjectModel;
 
 namespace PersonaEditor.ViewModels.Editors
 {
-    class ATFEditorVM : BindingObject, IEditor
+    class CatherineBMDEditorVM : BindingObject, IEditor
     {
-        public ObservableCollection<ATFEntryVM> Entries { get; } = new ObservableCollection<ATFEntryVM>();
+        public ObservableCollection<CatherineBMDEntryVM> Entries { get; } = new ObservableCollection<CatherineBMDEntryVM>();
 
-        public ATFEditorVM(ATF atf)
+        public CatherineBMDEditorVM(CatherineBMD bmd)
         {
-            if (atf == null)
-                throw new System.ArgumentNullException(nameof(atf));
+            if (bmd == null)
+                throw new System.ArgumentNullException(nameof(bmd));
 
-            for (int i = 0; i < atf.Entries.Count; i++)
-                Entries.Add(new ATFEntryVM(i, atf.Entries[i]));
+            foreach (var entry in bmd.Entries)
+                Entries.Add(new CatherineBMDEntryVM(entry));
         }
 
         public bool Close() => true;
     }
 
-    class ATFEntryVM : BindingObject
+    class CatherineBMDEntryVM : BindingObject
     {
-        private readonly ATF.ATFEntry entry;
+        private readonly CatherineBMD.CatherineBMDEntry entry;
         private string newText;
 
-        public int Index { get; }
-        public string Name => "";
+        public int Index => entry.Index;
+        public string Name => entry.Name;
         public string OldText => entry.OldText;
 
         public string NewText
@@ -44,10 +44,9 @@ namespace PersonaEditor.ViewModels.Editors
             }
         }
 
-        public ATFEntryVM(int index, ATF.ATFEntry entry)
+        public CatherineBMDEntryVM(CatherineBMD.CatherineBMDEntry entry)
         {
             this.entry = entry;
-            Index = index;
             newText = entry.NewText;
         }
     }

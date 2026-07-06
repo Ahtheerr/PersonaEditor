@@ -44,7 +44,7 @@ namespace PersonaEditorLib.Text
                 $"{fileName}\t{index}\t{EscapeText(entry.OldText, removeSplit)}\t").ToArray();
         }
 
-        public void ImportTextByIndex(IEnumerable<(int Index, string Text)> importedText)
+        public void ImportTextByIndex(IEnumerable<(int Index, string Text)> importedText, Dictionary<char, int> charWidth = null, int width = 0)
         {
             if (importedText == null)
                 return;
@@ -54,7 +54,8 @@ namespace PersonaEditorLib.Text
                 if (item.Index < 0 || item.Index >= entries.Count || string.IsNullOrEmpty(item.Text))
                     continue;
 
-                entries[item.Index].NewText = item.Text.Replace("\\n", "\n");
+                string text = width > 0 && charWidth != null ? item.Text.SplitByWidth(charWidth, width) : item.Text;
+                entries[item.Index].NewText = text.Replace("\\n", "\n");
             }
         }
 

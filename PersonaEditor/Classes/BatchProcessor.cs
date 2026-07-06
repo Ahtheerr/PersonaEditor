@@ -3,20 +3,17 @@ using AuxiliaryLibraries.WPF.Wrapper;
 using PersonaEditorLib;
 using PersonaEditorLib.Other;
 using PersonaEditorLib.Text;
+using PersonaEditorCMD;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using System.Xml.Linq;
 
 namespace PersonaEditor.Classes
 {
     internal static class BatchProcessor
     {
-        private const string SettingsFileName = "PersonaEditor.xml";
-        private const string DefaultFontName = "P4";
-
         public static BatchResult ExportImages(string sourceRoot, string outputRoot)
         {
             var result = new BatchResult();
@@ -57,33 +54,35 @@ namespace PersonaEditor.Classes
         {
             var result = new BatchResult();
             var settings = LoadTextSettings();
+            string[] sourcePaths = EnumerateSourceFiles(sourceRoot).ToArray();
+            Dictionary<string, string> batchTextNames = BuildBatchTextNames(sourceRoot, sourcePaths);
             if (!string.IsNullOrEmpty(outputTextPath))
             {
                 EnsureDirectory(outputTextPath);
-                File.WriteAllText(outputTextPath, "", Encoding.UTF8);
+                File.WriteAllText(outputTextPath, "", settings.FileEncoding);
             }
 
-            foreach (string sourcePath in EnumerateSourceFiles(sourceRoot))
+            foreach (string sourcePath in sourcePaths)
             {
                 string fileDir = GetOutputDirectory(sourceRoot, sourcePath, null);
                 ProcessFile(sourcePath, result, gameFile =>
                 {
                     string path = outputTextPath;
                     if (string.IsNullOrEmpty(path))
-                        path = Path.Combine(fileDir, Path.GetFileNameWithoutExtension(gameFile.Name) + ".TXT");
+                        path = Path.Combine(fileDir, Path.GetFileNameWithoutExtension(GetTextFileName(gameFile)) + ".TXT");
 
-                    IEnumerable<string> lines = ExportTextLines(gameFile, settings.OldEncoding);
+                    IEnumerable<string> lines = ExportTextLines(gameFile, settings);
                     if (lines != null)
                     {
                         EnsureDirectory(path);
-                        File.AppendAllLines(path, lines, Encoding.UTF8);
+                        File.AppendAllLines(path, lines, settings.FileEncoding);
                         result.Exported++;
                     }
-                });
+                }, batchTextNames[sourcePath]);
             }
 
             if (!string.IsNullOrEmpty(outputTextPath))
-                RemoveDuplicateTextRows(outputTextPath, Encoding.UTF8);
+                RemoveDuplicateTextRows(outputTextPath, settings.FileEncoding);
 
             return result;
         }
@@ -92,26 +91,29 @@ namespace PersonaEditor.Classes
         {
             var result = new BatchResult();
             var settings = LoadTextSettings();
+            string[] sourcePaths = EnumerateSourceFiles(sourceRoot).ToArray();
+            Dictionary<string, string> batchTextNames = BuildBatchTextNames(sourceRoot, sourcePaths);
             var rowCache = new Dictionary<string, List<string[]>>(StringComparer.CurrentCultureIgnoreCase);
-            List<string[]> sharedRows = File.Exists(textPath) ? ReadTextRows(textPath, Encoding.UTF8, rowCache) : null;
+            List<string[]> sharedRows = File.Exists(textPath) ? ReadTextRows(textPath, settings.FileEncoding, rowCache) : null;
 
-            foreach (string sourcePath in EnumerateSourceFiles(sourceRoot))
+            foreach (string sourcePath in sourcePaths)
             {
                 bool changed = false;
                 var file = OpenSourceFile(sourcePath, result);
                 if (file == null)
                     continue;
 
+                file.Tag = batchTextNames[sourcePath];
                 string fileDir = Path.GetDirectoryName(sourcePath);
                 ProcessGameFile(file, gameFile =>
                 {
                     List<string[]> rows = sharedRows;
                     if (rows == null)
                     {
-                        string localPath = Path.Combine(fileDir, Path.GetFileNameWithoutExtension(gameFile.Name) + ".TXT");
+                        string localPath = Path.Combine(fileDir, Path.GetFileNameWithoutExtension(GetTextFileName(gameFile)) + ".TXT");
                         if (!File.Exists(localPath))
                             return;
-                        rows = ReadTextRows(localPath, Encoding.UTF8, rowCache);
+                        rows = ReadTextRows(localPath, settings.FileEncoding, rowCache);
                     }
 
                     if (ImportTextRows(gameFile, rows, settings))
@@ -128,14 +130,18 @@ namespace PersonaEditor.Classes
             return result;
         }
 
-        private static IEnumerable<string> ExportTextLines(GameFile gameFile, PersonaEncoding oldEncoding)
+        private static IEnumerable<string> ExportTextLines(GameFile gameFile, TextSettings settings)
         {
+            string fileName = GetTextFileName(gameFile);
+
             if (gameFile.GameData is PTP ptp)
-                return ptp.ExportTXT(false, oldEncoding).Select(x => $"{gameFile.Name}\t{x}");
+                return ptp.ExportTXT(settings.RemoveSplit, settings.OldEncoding).Select(x => $"{fileName}\t{x}");
             if (gameFile.GameData is BMD bmd)
-                return new PTP(bmd).ExportTXT(false, oldEncoding).Select(x => $"{gameFile.Name}\t{x}");
+                return new PTP(bmd).ExportTXT(settings.RemoveSplit, settings.OldEncoding).Select(x => $"{fileName}\t{x}");
+            if (gameFile.GameData is CatherineBMD catherineBmd)
+                return catherineBmd.ExportText(fileName, settings.RemoveSplit);
             if (gameFile.GameData is ATF atf)
-                return atf.ExportText(gameFile.Name, false);
+                return atf.ExportText(fileName, settings.RemoveSplit);
             if (gameFile.GameData is StringList list)
                 return list.ExportText();
 
@@ -144,15 +150,19 @@ namespace PersonaEditor.Classes
 
         private static bool ImportTextRows(GameFile gameFile, List<string[]> rows, TextSettings settings)
         {
+            string fileName = GetTextFileName(gameFile);
+
             if (gameFile.GameData is PTP ptp)
-                return ImportPTPText(ptp, gameFile.Name, rows);
+                return ImportPTPText(ptp, fileName, rows, settings);
             if (gameFile.GameData is ATF atf)
-                return ImportATFText(atf, gameFile.Name, rows);
+                return ImportATFText(atf, fileName, rows, settings);
+            if (gameFile.GameData is CatherineBMD catherineBmd)
+                return ImportCatherineBMDText(catherineBmd, fileName, rows, settings);
             if (gameFile.GameData is BMD bmd)
             {
                 var bmdText = new PTP(bmd);
                 bmdText.CopyOld2New(settings.OldEncoding);
-                if (!ImportPTPText(bmdText, gameFile.Name, rows))
+                if (!ImportPTPText(bmdText, fileName, rows, settings))
                     return false;
 
                 var temp = new BMD(bmdText, settings.NewEncoding);
@@ -172,40 +182,91 @@ namespace PersonaEditor.Classes
             return false;
         }
 
-        private static bool ImportPTPText(PTP ptp, string fileName, List<string[]> rows)
+        private static bool ImportPTPText(PTP ptp, string fileName, List<string[]> rows, TextSettings settings)
         {
+            if (settings.LineByLine)
+            {
+                int textColumn = settings.Map[LineMap.Type.NewText];
+                if (textColumn < 0)
+                    return false;
+
+                string[] importedLines = rows
+                    .Where(row => IsMappedToFile(row, fileName, settings.Map) && row.Length > textColumn)
+                    .Select(row => row[textColumn])
+                    .ToArray();
+                if (importedLines.Length == 0)
+                    return false;
+
+                ptp.ImportTextLBL(importedLines);
+                return true;
+            }
+
             string[][] imported = rows
-                .Select(row => TryGetPTPTranslation(row, fileName, out string[] text) ? text : null)
+                .Select(row => TryGetPTPTranslation(row, fileName, settings.Map, out string[] text) ? text : null)
                 .Where(x => x != null)
                 .ToArray();
 
             if (imported.Length == 0)
                 return false;
 
-            ptp.ImportText(imported);
+            if (settings.AutoWidth > 0)
+                ptp.ImportText(imported, settings.CharacterWidths, settings.AutoWidth);
+            else
+                ptp.ImportText(imported);
+
+            int oldNameColumn = settings.Map[LineMap.Type.OldName];
+            int newNameColumn = settings.Map[LineMap.Type.NewName];
+            if (oldNameColumn >= 0 && newNameColumn >= 0)
+            {
+                Dictionary<string, string> names = rows
+                    .Where(row => IsMappedToFile(row, fileName, settings.Map) && row.Length > Math.Max(oldNameColumn, newNameColumn))
+                    .Where(row => row[newNameColumn] != "")
+                    .GroupBy(row => row[oldNameColumn])
+                    .ToDictionary(group => group.Key, group => group.First()[newNameColumn]);
+                ptp.ImportNames(names, settings.OldEncoding);
+            }
+
             return true;
         }
 
-        private static bool ImportATFText(ATF atf, string fileName, List<string[]> rows)
+        private static bool ImportATFText(ATF atf, string fileName, List<string[]> rows, TextSettings settings)
         {
             var imported = new List<(int Index, string Text)>();
             foreach (string[] row in rows)
-                if (TryGetATFTranslation(row, fileName, out int index, out string text))
+                if (TryGetATFTranslation(row, fileName, settings.Map, out int index, out string text))
                     imported.Add((index, text));
 
             if (imported.Count == 0)
                 return false;
 
-            atf.ImportTextByIndex(imported);
+            atf.ImportTextByIndex(imported, settings.CharacterWidths, settings.AutoWidth);
             return true;
         }
 
-        private static bool TryGetPTPTranslation(string[] row, string fileName, out string[] text)
+        private static bool ImportCatherineBMDText(CatherineBMD bmd, string fileName, List<string[]> rows, TextSettings settings)
+        {
+            var imported = new List<(int Index, string Text)>();
+            foreach (string[] row in rows)
+                if (TryGetCatherineBMDTranslation(row, fileName, settings.Map, out int index, out string text))
+                    imported.Add((index, text));
+
+            if (imported.Count == 0)
+                return false;
+
+            bmd.ImportTextByIndex(imported, settings.CharacterWidths, settings.AutoWidth);
+            return true;
+        }
+
+        private static bool TryGetPTPTranslation(string[] row, string fileName, LineMap map, out string[] text)
         {
             text = null;
-            if (row.Length >= 6 && IsMatchingFileName(row[0], fileName) && row[5] != "")
+            int messageColumn = map[LineMap.Type.MSGindex];
+            int stringColumn = map[LineMap.Type.StringIndex];
+            int textColumn = map[LineMap.Type.NewText];
+            if (messageColumn >= 0 && stringColumn >= 0 && textColumn >= 0
+                && row.Length >= map.MinLength && IsMappedToFile(row, fileName, map) && row[textColumn] != "")
             {
-                text = new[] { row[1], row[2], row[5] };
+                text = new[] { row[messageColumn], row[stringColumn], row[textColumn] };
                 return true;
             }
 
@@ -218,7 +279,7 @@ namespace PersonaEditor.Classes
             return false;
         }
 
-        private static bool TryGetATFTranslation(string[] row, string fileName, out int index, out string text)
+        private static bool TryGetATFTranslation(string[] row, string fileName, LineMap map, out int index, out string text)
         {
             index = -1;
             text = "";
@@ -226,6 +287,15 @@ namespace PersonaEditor.Classes
             if (row.Length >= 4 && IsMatchingFileName(row[0], fileName) && int.TryParse(row[1], out index))
             {
                 text = row[3];
+                return !string.IsNullOrEmpty(text);
+            }
+
+            int indexColumn = map[LineMap.Type.StringIndex] >= 0 ? map[LineMap.Type.StringIndex] : map[LineMap.Type.MSGindex];
+            int textColumn = map[LineMap.Type.NewText];
+            if (indexColumn >= 0 && textColumn >= 0 && row.Length >= map.MinLength && IsMappedToFile(row, fileName, map)
+                && int.TryParse(row[indexColumn], out index))
+            {
+                text = row[textColumn];
                 return !string.IsNullOrEmpty(text);
             }
 
@@ -244,11 +314,35 @@ namespace PersonaEditor.Classes
             return false;
         }
 
-        private static void ProcessFile(string sourcePath, BatchResult result, Action<GameFile> action)
+        private static bool TryGetCatherineBMDTranslation(string[] row, string fileName, LineMap map, out int index, out string text)
+        {
+            index = -1;
+            text = "";
+
+            if (row.Length >= 5 && IsMatchingFileName(row[0], fileName) && int.TryParse(row[1], out index))
+            {
+                text = row[4];
+                return !string.IsNullOrEmpty(text);
+            }
+
+            return TryGetATFTranslation(row, fileName, map, out index, out text);
+        }
+
+        private static bool IsMappedToFile(string[] row, string fileName, LineMap map)
+        {
+            int fileColumn = map[LineMap.Type.FileName];
+            return fileColumn < 0 || (row.Length > fileColumn && IsMatchingFileName(row[fileColumn], fileName));
+        }
+
+        private static void ProcessFile(string sourcePath, BatchResult result, Action<GameFile> action, string batchTextName = null)
         {
             var file = OpenSourceFile(sourcePath, result);
             if (file != null)
+            {
+                if (!string.IsNullOrEmpty(batchTextName))
+                    file.Tag = batchTextName;
                 ProcessGameFile(file, action);
+            }
         }
 
         private static void ProcessGameFile(GameFile gameFile, Action<GameFile> action)
@@ -391,6 +485,40 @@ namespace PersonaEditor.Classes
         private static bool IsMatchingFileName(string value, string fileName)
             => value.Split('|').Any(x => x.Equals(fileName, StringComparison.CurrentCultureIgnoreCase));
 
+        private static string GetTextFileName(GameFile file)
+            => file.Tag as string ?? file.Name;
+
+        private static Dictionary<string, string> BuildBatchTextNames(string sourceRoot, string[] sourcePaths)
+        {
+            var result = new Dictionary<string, string>(StringComparer.CurrentCultureIgnoreCase);
+            foreach (var group in sourcePaths.GroupBy(Path.GetFileName, StringComparer.CurrentCultureIgnoreCase))
+            {
+                var paths = group.ToArray();
+                if (paths.Length == 1)
+                {
+                    result[paths[0]] = group.Key;
+                    continue;
+                }
+
+                var oneParent = paths.ToDictionary(x => x, x => GetTrailingRelativePath(sourceRoot, x, 1), StringComparer.CurrentCultureIgnoreCase);
+                bool oneParentIsEnough = oneParent.Values.Distinct(StringComparer.CurrentCultureIgnoreCase).Count() == paths.Length;
+                foreach (string path in paths)
+                    result[path] = oneParentIsEnough ? oneParent[path] : GetTrailingRelativePath(sourceRoot, path, 2);
+            }
+
+            return result;
+        }
+
+        private static string GetTrailingRelativePath(string sourceRoot, string filePath, int parentCount)
+        {
+            string[] parts = Path.GetRelativePath(sourceRoot, filePath)
+                .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Where(x => x != "")
+                .ToArray();
+            int count = Math.Min(parts.Length, parentCount + 1);
+            return Path.Combine(parts.Skip(parts.Length - count).ToArray());
+        }
+
         private static void RemoveDuplicateTextRows(string path, Encoding encoding)
         {
             string[] lines = File.ReadAllLines(path, encoding);
@@ -435,47 +563,38 @@ namespace PersonaEditor.Classes
 
         private static TextSettings LoadTextSettings()
         {
-            string oldFont = DefaultFontName;
-            string newFont = DefaultFontName;
-            string settingPath = Path.Combine(Static.Paths.CurrentFolderEXE, SettingsFileName);
-
-            if (File.Exists(settingPath))
-            {
-                try
-                {
-                    XDocument doc = XDocument.Load(settingPath, LoadOptions.PreserveWhitespace);
-                    XElement settings = doc.Element("Settings");
-                    oldFont = settings?.Element("OldFont")?.Value ?? oldFont;
-                    newFont = settings?.Element("NewFont")?.Value ?? newFont;
-                }
-                catch
-                {
-                }
-            }
-            else
-            {
-                CreateDefaultSettings(settingPath);
-            }
+            var settings = ApplicationSettings.AppSetting.Default;
+            string oldFont = settings.BatchSourceFont;
+            string newFont = settings.BatchDestinationFont;
+            int autoWidth = settings.BatchAutoWrap ? settings.BatchAutoWidth : 0;
+            PersonaEncoding newEncoding = Static.EncodingManager.GetPersonaEncoding(newFont);
+            PersonaFont newPersonaFont = autoWidth > 0 ? Static.FontManager.GetPersonaFont(newFont) : null;
+            if (autoWidth > 0 && newPersonaFont == null)
+                throw new InvalidOperationException($"The selected destination font '{newFont}' has no .fnt file for automatic wrapping.");
 
             return new TextSettings
             {
                 OldEncoding = Static.EncodingManager.GetPersonaEncoding(oldFont),
-                NewEncoding = Static.EncodingManager.GetPersonaEncoding(newFont)
+                NewEncoding = newEncoding,
+                RemoveSplit = settings.BatchRemoveSplit,
+                Map = new LineMap(settings.BatchUseMap ? settings.BatchMap : "%FN %MSGIND %STRIND %I %I %NEWSTR"),
+                AutoWidth = autoWidth,
+                CharacterWidths = newPersonaFont?.GetCharWidth(newEncoding),
+                LineByLine = settings.BatchLineByLine,
+                FileEncoding = GetFileEncoding(settings.BatchUseEncoding ? settings.BatchEncoding : "UTF-8")
             };
         }
 
-        private static void CreateDefaultSettings(string path)
+        private static Encoding GetFileEncoding(string name)
         {
-            try
+            switch (name)
             {
-                var doc = new XDocument(
-                    new XElement("Settings",
-                        new XElement("OldFont", DefaultFontName),
-                        new XElement("NewFont", DefaultFontName)));
-                doc.Save(path);
-            }
-            catch
-            {
+                case "UTF-16": return Encoding.Unicode;
+                case "UTF-32": return Encoding.UTF32;
+#pragma warning disable SYSLIB0001
+                case "UTF-7": return new UTF7Encoding();
+#pragma warning restore SYSLIB0001
+                default: return Encoding.UTF8;
             }
         }
 
@@ -483,6 +602,12 @@ namespace PersonaEditor.Classes
         {
             public PersonaEncoding OldEncoding { get; set; }
             public PersonaEncoding NewEncoding { get; set; }
+            public bool RemoveSplit { get; set; }
+            public LineMap Map { get; set; }
+            public int AutoWidth { get; set; }
+            public Dictionary<char, int> CharacterWidths { get; set; }
+            public bool LineByLine { get; set; }
+            public Encoding FileEncoding { get; set; }
         }
     }
 

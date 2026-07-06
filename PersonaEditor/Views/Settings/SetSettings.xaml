@@ -6,7 +6,7 @@
         xmlns:local="clr-namespace:PersonaEditor.View.Settings"
         mc:Ignorable="d"
         Name="SettingSetWindow"
-        Title="{DynamicResource main_Settings}" Height="420" Width="300" WindowStyle="ToolWindow" ResizeMode="NoResize" WindowStartupLocation="CenterScreen">
+        Title="{DynamicResource main_Settings}" Height="460" Width="420" WindowStyle="ToolWindow" ResizeMode="NoResize" WindowStartupLocation="CenterScreen">
 
     <Grid>
         <Grid.RowDefinitions>
@@ -31,6 +31,54 @@
                 <TabItem.Content>
                     <local:DefaultBackground DataContext="{Binding DefaultBackgroundVM}"/>
                 </TabItem.Content>
+            </TabItem>
+
+            <TabItem Header="Batch">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid Margin="10" DataContext="{Binding BatchVM}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Fonts" FontWeight="Bold" Margin="0,0,0,4"/>
+                        <TextBlock Grid.Row="1" Text="Source / export" VerticalAlignment="Center" Margin="0,4,10,4"/>
+                        <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding FontList}" SelectedIndex="{Binding SourceFont}" Margin="0,4"/>
+                        <TextBlock Grid.Row="2" Text="Destination / import" VerticalAlignment="Center" Margin="0,4,10,10"/>
+                        <ComboBox Grid.Row="2" Grid.Column="1" ItemsSource="{Binding FontList}" SelectedIndex="{Binding DestinationFont}" Margin="0,4,0,10"/>
+
+                        <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Text="Text options" FontWeight="Bold" Margin="0,0,0,4"/>
+                        <CheckBox Grid.Row="4" Grid.ColumnSpan="2" Content="Remove embedded line breaks (/rmvspl)" IsChecked="{Binding RemoveSplit}" Margin="0,4"/>
+
+                        <CheckBox x:Name="UseMap" Grid.Row="5" Content="TSV map (/map)" IsChecked="{Binding UseMap}" VerticalAlignment="Center" Margin="0,4,10,4"/>
+                        <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding Map, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsChecked, ElementName=UseMap}" Margin="0,4"/>
+
+                        <CheckBox x:Name="AutoWrap" Grid.Row="6" Content="Automatic wrapping (/auto)" IsChecked="{Binding AutoWrap}" VerticalAlignment="Center" Margin="0,4,10,4"/>
+                        <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding AutoWidth, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsChecked, ElementName=AutoWrap}" Margin="0,4" ToolTip="Maximum line width in pixels"/>
+
+                        <StackPanel Grid.Row="7" Grid.ColumnSpan="2">
+                            <CheckBox Content="Import line by line (/lbl)" IsChecked="{Binding LineByLine}" Margin="0,4"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition/>
+                                </Grid.ColumnDefinitions>
+                                <CheckBox x:Name="UseEncoding" Content="Text encoding (/enc)" IsChecked="{Binding UseEncoding}" VerticalAlignment="Center" Margin="0,4,10,4"/>
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding Encodings}" SelectedIndex="{Binding EncodingIndex}" IsEnabled="{Binding IsChecked, ElementName=UseEncoding}" Margin="0,4"/>
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
 

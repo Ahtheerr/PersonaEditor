@@ -8,6 +8,7 @@ namespace PersonaEditor.Classes
         private static List<FormatEnum> contextMenuItemsEdited = new List<FormatEnum>()
         {
             FormatEnum.BMD,
+            FormatEnum.CatherineBMD,
             FormatEnum.PTP,
             FormatEnum.SPD,
             FormatEnum.SPR,

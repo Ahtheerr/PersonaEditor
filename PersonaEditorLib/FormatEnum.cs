@@ -31,6 +31,7 @@
         APK,
         ATF,
         LB,
+        CatherineBMD,
         StringList
     }
 }

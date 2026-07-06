@@ -56,5 +56,35 @@
     <Setting Name="FTDEncoding" Type="System.String" Scope="User">
       <Value Profile="(Default)">Empty</Value>
     </Setting>
+    <Setting Name="BatchSourceFont" Type="System.String" Scope="User">
+      <Value Profile="(Default)">P4</Value>
+    </Setting>
+    <Setting Name="BatchDestinationFont" Type="System.String" Scope="User">
+      <Value Profile="(Default)">P4</Value>
+    </Setting>
+    <Setting Name="BatchRemoveSplit" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="BatchUseMap" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="BatchMap" Type="System.String" Scope="User">
+      <Value Profile="(Default)">%FN %MSGIND %STRIND %I %I %NEWSTR</Value>
+    </Setting>
+    <Setting Name="BatchAutoWrap" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="BatchAutoWidth" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">580</Value>
+    </Setting>
+    <Setting Name="BatchLineByLine" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="BatchUseEncoding" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="BatchEncoding" Type="System.String" Scope="User">
+      <Value Profile="(Default)">UTF-8</Value>
+    </Setting>
   </Settings>
 </SettingsFile>

@@ -7,12 +7,14 @@ namespace PersonaEditor.ViewModels.Settings
     {
         public DefaultBackgroundVM DefaultBackgroundVM { get; } = new DefaultBackgroundVM();
         public MainVM MainVM { get; } = new MainVM();
+        public BatchVM BatchVM { get; } = new BatchVM();
 
         public ICommand ClickOk { get; }
         public void Ok()
         {
             DefaultBackgroundVM.Save();
             MainVM.Save();
+            BatchVM.Save();
         }
 
         public SetSettingsVM()

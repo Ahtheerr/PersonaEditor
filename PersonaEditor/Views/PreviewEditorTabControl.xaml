@@ -159,6 +159,11 @@
                                         <editors:ATFEditor/>
                                     </Border>
                                 </DataTemplate>
+                                <DataTemplate DataType="{x:Type editorsVM:CatherineBMDEditorVM}">
+                                    <Border BorderBrush="Black" BorderThickness="1">
+                                        <editors:ATFEditor/>
+                                    </Border>
+                                </DataTemplate>
                                 <DataTemplate DataType="{x:Type editorsVM:HEXEditorVM}">
                                     <Border BorderBrush="Black" BorderThickness="1">
                                         <editors:HEXEditor/>

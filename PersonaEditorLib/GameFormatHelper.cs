@@ -109,6 +109,8 @@ namespace PersonaEditorLib
                     Obj = new FileContainer.BF(data, name);
                 else if (type == FormatEnum.PM1)
                     Obj = new FileContainer.PM1(data);
+                else if (type == FormatEnum.CatherineBMD)
+                    Obj = new Text.CatherineBMD(data);
                 else if (type == FormatEnum.BMD)
                     Obj = new Text.BMD(data);
                 else if (type == FormatEnum.ATF)
@@ -217,7 +219,9 @@ namespace PersonaEditorLib
             if (data.Length >= 4)
             {
                 ReadOnlySpan<byte> header = data;
-                if (HasMagic(header, 0, 0x46, 0x50, 0x41, 0x43))
+                if (HasMagic(header, 0, 0x78, 0x56, 0x34, 0x12))
+                    return FormatEnum.CatherineBMD;
+                else if (HasMagic(header, 0, 0x46, 0x50, 0x41, 0x43))
                     return FormatEnum.PAC;
                 else if (HasMagic(header, 0, 0x43, 0x54, 0x50, 0x4B))
                     return FormatEnum.CTPK;

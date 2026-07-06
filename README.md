@@ -35,6 +35,7 @@
 ### Catherine
 
 * Graphic containers: APK; (NOT THE SAME FORMAT AS METAPHOR'S APK)
+* Text: BMD;
 
 ### Digital Devil Saga
 

@@ -10,6 +10,7 @@
                   CanUserSortColumns="False">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="#" Binding="{Binding Index}" IsReadOnly="True" Width="60" />
+                <DataGridTextColumn Header="Name" Binding="{Binding Name}" IsReadOnly="True" Width="140" />
                 <DataGridTextColumn Header="Original" Binding="{Binding OldText}" IsReadOnly="True" Width="*" />
                 <DataGridTextColumn Header="Edited" Width="*">
                     <DataGridTextColumn.Binding>

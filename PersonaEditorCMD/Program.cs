@@ -138,15 +138,18 @@ namespace PersonaEditorCMD
 
         static void ProcessDirectory(ArgumentsWork argwrk)
         {
+            string[] filePaths = Directory.EnumerateFiles(argwrk.OpenedFile, "*", SearchOption.AllDirectories).ToArray();
+            Dictionary<string, string> batchTextNames = BuildBatchTextNames(argwrk.OpenedFile, filePaths);
+
             PrepareDirectoryExport(argwrk.ArgumentList);
 
-            foreach (string filePath in Directory.EnumerateFiles(argwrk.OpenedFile, "*", SearchOption.AllDirectories))
+            foreach (string filePath in filePaths)
             {
                 try
                 {
                     GameFile file = GameFormatHelper.OpenFile(Path.GetFileName(filePath), File.ReadAllBytes(filePath));
                     if (file != null)
-                        ProcessFile(file, argwrk.ArgumentList, Path.GetDirectoryName(filePath));
+                        ProcessFile(file, argwrk.ArgumentList, Path.GetDirectoryName(filePath), batchTextNames[filePath]);
                 }
                 catch
                 {
@@ -170,8 +173,11 @@ namespace PersonaEditorCMD
                     RemoveDuplicateTextRows(command.Value, command.Parameters.FileEncoding);
         }
 
-        static void ProcessFile(GameFile file, IEnumerable<Argument> commands, string openedFileDir)
+        static void ProcessFile(GameFile file, IEnumerable<Argument> commands, string openedFileDir, string batchTextName = null)
         {
+            if (!string.IsNullOrEmpty(batchTextName))
+                file.Tag = batchTextName;
+
             foreach (var command in commands)
                 ProcessCommand(file, command, openedFileDir);
         }
@@ -282,21 +288,27 @@ namespace PersonaEditorCMD
 
         static void ExportText(GameFile objectFile, string value, string openedFileDir, Parameters parameters)
         {
+            string objectFileName = GetTextFileName(objectFile);
+
             if (objectFile.GameData is PTP ptp)
             {
-                ExportPTPText(ptp, objectFile.Name, value, openedFileDir, parameters);
+                ExportPTPText(ptp, objectFileName, value, openedFileDir, parameters);
             }
             else if (objectFile.GameData is ATF atf)
             {
-                ExportATFText(atf, objectFile.Name, value, openedFileDir, parameters);
+                ExportATFText(atf, objectFileName, value, openedFileDir, parameters);
+            }
+            else if (objectFile.GameData is CatherineBMD catherineBmd)
+            {
+                ExportCatherineBMDText(catherineBmd, objectFileName, value, openedFileDir, parameters);
             }
             else if (objectFile.GameData is BMD bmd)
             {
-                ExportPTPText(new PTP(bmd), objectFile.Name, value, openedFileDir, parameters);
+                ExportPTPText(new PTP(bmd), objectFileName, value, openedFileDir, parameters);
             }
             else if (objectFile.GameData is StringList strlst)
             {
-                string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFile.Name) + ".TXT") : value;
+                string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
                 string[] exp = strlst.ExportText();
 
                 File.AppendAllLines(path, exp);
@@ -305,20 +317,26 @@ namespace PersonaEditorCMD
 
         static void ImportText(GameFile objectFile, string value, string openedFileDir, Parameters parameters)
         {
+            string objectFileName = GetTextFileName(objectFile);
+
             if (objectFile.GameData is PTP ptp)
             {
-                ImportPTPText(ptp, objectFile.Name, value, openedFileDir, parameters);
+                ImportPTPText(ptp, objectFileName, value, openedFileDir, parameters);
             }
             else if (objectFile.GameData is ATF atf)
             {
-                ImportATFText(atf, objectFile.Name, value, openedFileDir, parameters);
+                ImportATFText(atf, objectFileName, value, openedFileDir, parameters);
+            }
+            else if (objectFile.GameData is CatherineBMD catherineBmd)
+            {
+                ImportCatherineBMDText(catherineBmd, objectFileName, value, openedFileDir, parameters);
             }
             else if (objectFile.GameData is BMD bmd)
             {
                 PTP bmdText = new PTP(bmd);
                 bmdText.CopyOld2New(Static.OldEncoding());
 
-                if (ImportPTPText(bmdText, objectFile.Name, value, openedFileDir, parameters))
+                if (ImportPTPText(bmdText, objectFileName, value, openedFileDir, parameters))
                 {
                     var temp = new BMD(bmdText, Static.NewEncoding());
                     temp.IsLittleEndian = bmd.IsLittleEndian;
@@ -327,7 +345,7 @@ namespace PersonaEditorCMD
             }
             else if (objectFile.GameData is StringList strlst)
             {
-                string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFile.Name) + ".TXT") : value;
+                string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
                 if (File.Exists(path))
                 {
                     string[][] importedtext = GetTextRows(path, parameters.FileEncoding).
@@ -351,6 +369,12 @@ namespace PersonaEditorCMD
             File.AppendAllLines(path, atf.ExportText(objectFileName, parameters.RemoveSplit));
         }
 
+        static void ExportCatherineBMDText(CatherineBMD bmd, string objectFileName, string value, string openedFileDir, Parameters parameters)
+        {
+            string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
+            File.AppendAllLines(path, bmd.ExportText(objectFileName, parameters.RemoveSplit));
+        }
+
         static bool ImportATFText(ATF atf, string objectFileName, string value, string openedFileDir, Parameters parameters)
         {
             string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
@@ -369,7 +393,31 @@ namespace PersonaEditorCMD
                     imported.Add((index, text));
             }
 
-            atf.ImportTextByIndex(imported);
+            if (parameters.Width > 0)
+                atf.ImportTextByIndex(imported, Static.NewFont().GetCharWidth(Static.NewEncoding()), parameters.Width);
+            else
+                atf.ImportTextByIndex(imported);
+            return true;
+        }
+
+        static bool ImportCatherineBMDText(CatherineBMD bmd, string objectFileName, string value, string openedFileDir, Parameters parameters)
+        {
+            string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
+
+            if (!File.Exists(path))
+                return false;
+
+            var rows = GetTextRows(path, parameters.FileEncoding);
+            var imported = new List<(int Index, string Text)>();
+
+            foreach (var row in rows)
+                if (TryGetCatherineBMDTranslation(row, objectFileName, out int index, out string text))
+                    imported.Add((index, text));
+
+            if (parameters.Width > 0)
+                bmd.ImportTextByIndex(imported, Static.NewFont().GetCharWidth(Static.NewEncoding()), parameters.Width);
+            else
+                bmd.ImportTextByIndex(imported);
             return true;
         }
 
@@ -400,6 +448,32 @@ namespace PersonaEditorCMD
                     text = row[textColumn];
                     return !string.IsNullOrEmpty(text);
                 }
+            }
+
+            if (row.Length >= 3 && int.TryParse(row[0], out index))
+            {
+                text = row[^1];
+                return !string.IsNullOrEmpty(text);
+            }
+
+            return false;
+        }
+
+        static bool TryGetCatherineBMDTranslation(string[] row, string objectFileName, out int index, out string text)
+        {
+            index = -1;
+            text = "";
+
+            if (row.Length >= 5 && IsMatchingFileName(row[0], objectFileName) && int.TryParse(row[1], out index))
+            {
+                text = row[4];
+                return !string.IsNullOrEmpty(text);
+            }
+
+            if (row.Length >= 4 && IsMatchingFileName(row[0], objectFileName) && int.TryParse(row[1], out index))
+            {
+                text = row[3];
+                return !string.IsNullOrEmpty(text);
             }
 
             if (row.Length >= 3 && int.TryParse(row[0], out index))
@@ -487,6 +561,40 @@ namespace PersonaEditorCMD
         static bool IsMatchingFileName(string value, string objectFileName)
         {
             return value.Split('|').Any(x => x.Equals(objectFileName, StringComparison.CurrentCultureIgnoreCase));
+        }
+
+        static string GetTextFileName(GameFile file)
+            => file.Tag as string ?? file.Name;
+
+        static Dictionary<string, string> BuildBatchTextNames(string sourceRoot, string[] filePaths)
+        {
+            var result = new Dictionary<string, string>(StringComparer.CurrentCultureIgnoreCase);
+            foreach (var group in filePaths.GroupBy(Path.GetFileName, StringComparer.CurrentCultureIgnoreCase))
+            {
+                var paths = group.ToArray();
+                if (paths.Length == 1)
+                {
+                    result[paths[0]] = group.Key;
+                    continue;
+                }
+
+                var oneParent = paths.ToDictionary(x => x, x => GetTrailingRelativePath(sourceRoot, x, 1), StringComparer.CurrentCultureIgnoreCase);
+                bool oneParentIsEnough = oneParent.Values.Distinct(StringComparer.CurrentCultureIgnoreCase).Count() == paths.Length;
+                foreach (string path in paths)
+                    result[path] = oneParentIsEnough ? oneParent[path] : GetTrailingRelativePath(sourceRoot, path, 2);
+            }
+
+            return result;
+        }
+
+        static string GetTrailingRelativePath(string sourceRoot, string filePath, int parentCount)
+        {
+            string[] parts = Path.GetRelativePath(sourceRoot, filePath)
+                .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Where(x => x != "")
+                .ToArray();
+            int count = Math.Min(parts.Length, parentCount + 1);
+            return Path.Combine(parts.Skip(parts.Length - count).ToArray());
         }
 
         static void RemoveDuplicateTextRows(string path, Encoding encoding)
