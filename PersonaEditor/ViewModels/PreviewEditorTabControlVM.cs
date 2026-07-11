@@ -93,6 +93,12 @@ namespace PersonaEditor.ViewModels
                 case FormatEnum.CatherineBMD:
                     DataContext = new CatherineBMDEditorVM(sender.PersonaFile.GameData as CatherineBMD);
                     break;
+                case FormatEnum.MBM:
+                    DataContext = new MBMEditorVM(sender.PersonaFile.GameData as MBM, sender.PersonaFile.Name);
+                    break;
+                case FormatEnum.P5T:
+                    DataContext = new P5TEditorVM(sender.PersonaFile.GameData as P5T, sender.PersonaFile.Name);
+                    break;
                 case FormatEnum.ATF:
                     DataContext = new ATFEditorVM(sender.PersonaFile.GameData as ATF);
                     break;

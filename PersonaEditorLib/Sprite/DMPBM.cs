@@ -31,7 +31,7 @@ namespace PersonaEditorLib.Sprite
         public DMPBM(byte[] data)
         {
             compressedData = data ?? throw new ArgumentNullException(nameof(data));
-            decompressedData = DecompressLz77x10(data);
+            decompressedData = NintendoCompression.Decompress(data);
 
             using (var reader = new BinaryReader(new MemoryStream(decompressedData)))
             {
@@ -171,44 +171,6 @@ namespace PersonaEditorLib.Sprite
             int inTilePixel = sourceIndex % 64;
             x = globalX + Tiled3dsOrder[inTilePixel] % 8;
             y = globalY + Tiled3dsOrder[inTilePixel] / 8;
-        }
-
-        private static byte[] DecompressLz77x10(byte[] data)
-        {
-            if (data.Length < 4 || data[0] != 0x10)
-                throw new InvalidDataException("CMP: unsupported LZ77 header.");
-
-            int size = data[1] | data[2] << 8 | data[3] << 16;
-            byte[] output = new byte[size];
-            int inputOffset = 4;
-            int outputOffset = 0;
-
-            while (outputOffset < output.Length)
-            {
-                byte flags = data[inputOffset++];
-                for (int i = 0; i < 8 && outputOffset < output.Length; i++, flags <<= 1)
-                {
-                    if ((flags & 0x80) == 0)
-                    {
-                        output[outputOffset++] = data[inputOffset++];
-                        continue;
-                    }
-
-                    int value = data[inputOffset] << 8 | data[inputOffset + 1];
-                    inputOffset += 2;
-                    int length = (value >> 12) + 3;
-                    int distance = (value & 0xFFF) + 1;
-                    int source = outputOffset - distance;
-
-                    if (source < 0)
-                        throw new InvalidDataException("CMP: invalid LZ77 back-reference.");
-
-                    for (int j = 0; j < length && outputOffset < output.Length; j++)
-                        output[outputOffset++] = output[source + j];
-                }
-            }
-
-            return output;
         }
 
         private static int Scale4(int value) => value << 4 | value;

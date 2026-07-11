@@ -52,11 +52,13 @@ Common commands
 ---------------
 
 -exptext [TXT]
-  Export text from PTP, BMD/MSG, ATF, and supported string-list files. If TXT is
+  Export text from PTP, BMD/MSG, ATF, MBM/MSG2, Persona 5 Tactica (.dat/.bytes), and supported
+  string-list files. If TXT is
   omitted, a TXT is created next to the source file.
 
 -imptext [TXT]
-  Import text into PTP, BMD/MSG, ATF, and supported string-list files. Usually
+  Import text into PTP, BMD/MSG, ATF, MBM/MSG2, Persona 5 Tactica (.dat/.bytes), and supported
+  string-list files. Usually
   followed by `-save`.
 
 -expptp
@@ -118,6 +120,10 @@ Useful options
 /rmvspl
   On text export, replace line breaks inside strings with spaces.
 
+/agr
+  On folder text export, use aggressive line deduplication.
+  Default deduplication only merges whole identical files.
+
 /auto WIDTH
   On PTP text import, automatically wrap text using the selected font width.
   Example: `/auto 580`.
@@ -176,10 +182,10 @@ Containers:
   BIN, PAC, SPR, SPR3, SPR6, BF, PM1, BVP, TBL, TPC, LB
 
 Images and textures:
-  TMX, DDS, CTPK, G1T, CMP/DMPBM, HIP
+  TMX, DDS, CTPK, G1T, STEX, CMP/DMPBM/STEX, HIP
 
 Text and fonts:
-  BMD/MSG, PTP, ATF, FNT, FNT0, ABC sidecars for HIP fonts
+  BMD/MSG, MBM/MSG2, Persona 5 Tactica (.dat/.bytes), PTP, ATF, FNT, FNT0, ABC sidecars for HIP fonts
 
 Unknown or raw files may appear as DAT/HEX when exported from containers.
 

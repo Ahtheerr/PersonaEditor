@@ -9,6 +9,8 @@ namespace PersonaEditor.Classes
         {
             FormatEnum.BMD,
             FormatEnum.CatherineBMD,
+            FormatEnum.MBM,
+            FormatEnum.P5T,
             FormatEnum.PTP,
             FormatEnum.SPD,
             FormatEnum.SPR,

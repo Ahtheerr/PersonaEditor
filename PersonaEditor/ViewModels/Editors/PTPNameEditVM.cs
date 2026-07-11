@@ -35,14 +35,14 @@ namespace PersonaEditor.ViewModels.Editors
         public void UpdateOldEncoding(string oldEncoding)
         {
             OldEncoding = Static.EncodingManager.GetPersonaEncoding(oldEncoding);
-            OldNameVisual.UpdateFont(Static.FontManager.GetPersonaFont(oldEncoding));
+            OldNameVisual.UpdateFont(Static.FontManager.GetPersonaFont(oldEncoding), OldEncoding as PersonaEditorLib.PersonaEncoding);
             Notify("OldName");
         }
 
         public void UpdateNewEncoding(string newEncoding)
         {
             NewEncoding = Static.EncodingManager.GetPersonaEncoding(newEncoding);
-            NewNameVisual.UpdateFont(Static.FontManager.GetPersonaFont(newEncoding));
+            NewNameVisual.UpdateFont(Static.FontManager.GetPersonaFont(newEncoding), NewEncoding as PersonaEditorLib.PersonaEncoding);
         }
 
         public void UpdateBackground(int background)

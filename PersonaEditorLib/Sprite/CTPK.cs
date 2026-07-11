@@ -226,6 +226,12 @@ namespace PersonaEditorLib.Sprite
             return CtpkImageCodec.Load(data, settings);
         }
 
+        internal static Bitmap ReadCtrBitmap(byte[] data, int width, int height, int formatIndex)
+            => ReadBitmap(data, width, height, formatIndex);
+
+        internal static byte[] WriteCtrBitmap(Bitmap bitmap, int formatIndex)
+            => WriteBitmap(bitmap, formatIndex);
+
         private static byte[] WriteBitmap(Bitmap bitmap, int formatIndex)
         {
             if (!CtrFormats.ContainsKey(formatIndex))

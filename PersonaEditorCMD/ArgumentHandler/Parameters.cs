@@ -18,6 +18,7 @@ namespace PersonaEditorCMD.ArgumentHandler
         public bool AsBMD { get; } = false;
         public bool LineByLine { get; } = false;
         public bool Overwrite { get; } = false;
+        public bool AggressiveDeduplication { get; } = false;
 
         public Parameters()
         {
@@ -61,6 +62,8 @@ namespace PersonaEditorCMD.ArgumentHandler
                     AsBMD = true;
                 else if (a[0] == "/lbl")
                     LineByLine = true;
+                else if (a[0] == "/agr" || a[0] == "/aggressive")
+                    AggressiveDeduplication = true;
             }
         }
     }

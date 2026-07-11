@@ -1,4 +1,6 @@
+using AuxiliaryLibraries.Tools;
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -22,6 +24,7 @@ namespace PersonaEditorLib.Text
         }
 
         public IReadOnlyList<CatherineBMDEntry> Entries => entries;
+        public bool IsLittleEndian { get; private set; }
         public FormatEnum Type => FormatEnum.CatherineBMD;
         public List<GameFile> SubFiles { get; } = new List<GameFile>();
         public int GetSize() => GetData().Length;
@@ -32,7 +35,7 @@ namespace PersonaEditorLib.Text
                 return originalData.ToArray();
 
             using MemoryStream ms = new MemoryStream();
-            using BinaryWriter writer = new BinaryWriter(ms, Encoding.ASCII, true);
+            using BinaryWriter writer = IOTools.OpenWriteFile(ms, IsLittleEndian);
 
             ms.Write(originalData, 0, tableOffset);
             for (int i = 0; i < records.Count; i++)
@@ -103,8 +106,8 @@ namespace PersonaEditorLib.Text
                 if (item.Index < 0 || item.Index >= entries.Count || string.IsNullOrEmpty(item.Text))
                     continue;
 
-                string text = width > 0 && charWidth != null ? item.Text.SplitByWidth(charWidth, width) : item.Text;
-                entries[item.Index].NewText = text.Replace("\\n", "\n");
+                string text = width > 0 && charWidth != null ? item.Text.SplitByWidthOrImportedRaw(charWidth, width) : item.Text.NormalizeImportedText();
+                entries[item.Index].NewText = text;
             }
         }
 
@@ -112,6 +115,8 @@ namespace PersonaEditorLib.Text
         {
             if (data.Length < 0x28)
                 throw new Exception("Catherine BMD: file too small");
+
+            IsLittleEndian = BinaryPrimitives.ReadUInt32LittleEndian(data) == MagicNumber;
             if (ReadUInt32(data, 0) != MagicNumber)
                 throw new Exception("Catherine BMD: wrong magic number");
             if (ReadUInt32(data, 0x0C) != data.Length)
@@ -167,7 +172,7 @@ namespace PersonaEditorLib.Text
                     throw new Exception("Catherine BMD: invalid text range");
 
                 string entryName = slotStarts.Length == 1 ? name : $"{name}:{i}";
-                var entry = new CatherineBMDEntry(entries.Count, recordIndex, i, entryName, data.Skip(slotStarts[i]).Take(textEnd - slotStarts[i]).ToArray());
+                var entry = new CatherineBMDEntry(entries.Count, recordIndex, i, entryName, data.Skip(slotStarts[i]).Take(textEnd - slotStarts[i]).ToArray(), IsLittleEndian);
                 record.Slots.Add(entry);
                 entries.Add(entry);
             }
@@ -259,9 +264,14 @@ namespace PersonaEditorLib.Text
             return Encoding.ASCII.GetString(data, 0, length);
         }
 
-        private static uint ReadUInt32(byte[] data, int offset) => BitConverter.ToUInt32(data, offset);
-        private static ushort ReadUInt16(byte[] data, int offset) => BitConverter.ToUInt16(data, offset);
-        private static short ReadInt16(byte[] data, int offset) => BitConverter.ToInt16(data, offset);
+        private uint ReadUInt32(byte[] data, int offset)
+            => IsLittleEndian ? BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset, 4)) : BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset, 4));
+
+        private ushort ReadUInt16(byte[] data, int offset)
+            => IsLittleEndian ? BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset, 2)) : BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(offset, 2));
+
+        private short ReadInt16(byte[] data, int offset)
+            => IsLittleEndian ? BinaryPrimitives.ReadInt16LittleEndian(data.AsSpan(offset, 2)) : BinaryPrimitives.ReadInt16BigEndian(data.AsSpan(offset, 2));
 
         private class Record
         {
@@ -274,6 +284,7 @@ namespace PersonaEditorLib.Text
         public class CatherineBMDEntry
         {
             private readonly byte[] raw;
+            private readonly bool isLittleEndian;
             private readonly bool leadingOddNull;
             private readonly ushort[] prefixUnits;
             private readonly ushort[] suffixUnits;
@@ -285,21 +296,22 @@ namespace PersonaEditorLib.Text
             public string OldText { get; }
             public string NewText { get; set; } = string.Empty;
 
-            public CatherineBMDEntry(int index, int recordIndex, int slotIndex, string name, byte[] raw)
+            public CatherineBMDEntry(int index, int recordIndex, int slotIndex, string name, byte[] raw, bool isLittleEndian)
             {
                 this.raw = raw;
+                this.isLittleEndian = isLittleEndian;
                 Index = index;
                 RecordIndex = recordIndex;
                 SlotIndex = slotIndex;
                 Name = name;
 
-                ushort[] units = GetUnits(raw, out leadingOddNull);
+                ushort[] units = GetUnits(raw, isLittleEndian, out leadingOddNull);
                 int bodyEnd = GetBodyEnd(units);
                 int bodyStart = GetBodyStart(units);
 
                 prefixUnits = units.Take(bodyStart).ToArray();
                 suffixUnits = units.Skip(bodyEnd).ToArray();
-                OldText = DecodeVisibleText(units, bodyStart, bodyEnd);
+                OldText = DecodeVisibleText(units, bodyStart, bodyEnd, isLittleEndian);
             }
 
             public byte[] GetData()
@@ -308,13 +320,13 @@ namespace PersonaEditorLib.Text
                     return raw.ToArray();
 
                 var units = new List<ushort>(prefixUnits);
-                units.AddRange(EncodeText(NewText));
+                units.AddRange(EncodeText(NewText, isLittleEndian));
                 if (suffixUnits.Length == 0 || suffixUnits[0] == 0xD821)
                     units.Add(0);
                 units.AddRange(suffixUnits);
 
                 using MemoryStream ms = new MemoryStream();
-                using BinaryWriter writer = new BinaryWriter(ms, Encoding.Unicode);
+                using BinaryWriter writer = IOTools.OpenWriteFile(ms, isLittleEndian);
                 if (leadingOddNull)
                     writer.Write((byte)0);
                 foreach (ushort unit in units)
@@ -322,14 +334,16 @@ namespace PersonaEditorLib.Text
                 return ms.ToArray();
             }
 
-            private static ushort[] GetUnits(byte[] raw, out bool leadingOddNull)
+            private static ushort[] GetUnits(byte[] raw, bool isLittleEndian, out bool leadingOddNull)
             {
                 leadingOddNull = raw.Length % 2 == 1 && raw.Length > 0 && raw[0] == 0;
                 int start = leadingOddNull ? 1 : 0;
                 int count = (raw.Length - start) / 2;
                 ushort[] units = new ushort[count];
                 for (int i = 0; i < count; i++)
-                    units[i] = BitConverter.ToUInt16(raw, start + i * 2);
+                    units[i] = isLittleEndian
+                        ? BinaryPrimitives.ReadUInt16LittleEndian(raw.AsSpan(start + i * 2, 2))
+                        : BinaryPrimitives.ReadUInt16BigEndian(raw.AsSpan(start + i * 2, 2));
                 return units;
             }
 
@@ -363,7 +377,7 @@ namespace PersonaEditorLib.Text
                 return i;
             }
 
-            private static string DecodeVisibleText(ushort[] units, int start, int end)
+            private static string DecodeVisibleText(ushort[] units, int start, int end, bool isLittleEndian)
             {
                 var visible = new List<ushort>();
                 for (int i = start; i < end;)
@@ -381,7 +395,7 @@ namespace PersonaEditorLib.Text
                         continue;
                     }
 
-                    visible.Add(unit);
+                    visible.Add(!isLittleEndian && unit == 0xFFE3 ? (ushort)' ' : unit);
                     i++;
                 }
 
@@ -395,11 +409,11 @@ namespace PersonaEditorLib.Text
                 return Encoding.Unicode.GetString(bytes).Replace("\0", "\n");
             }
 
-            private static IEnumerable<ushort> EncodeText(string text)
+            private static IEnumerable<ushort> EncodeText(string text, bool isLittleEndian)
             {
                 text = text.Replace("\r\n", "\n").Replace("\r", "\n");
                 foreach (char c in text)
-                    yield return c == '\n' ? (ushort)0 : c;
+                    yield return c == '\n' ? (ushort)0 : !isLittleEndian && c == ' ' ? (ushort)0xFFE3 : c;
             }
 
             private static bool IsSurrogate(ushort unit) => unit >= 0xD800 && unit <= 0xDFFF;

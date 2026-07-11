@@ -38,6 +38,7 @@ namespace PersonaEditorLib
 
             //Graphic containers
             { ".spr", FormatEnum.SPR },
+            { ".sp2", FormatEnum.SPR },
             { ".spr3", FormatEnum.SPR3 },
             { ".spr6", FormatEnum.SPR6 },
             { ".spr4", FormatEnum.SPR4 },
@@ -45,6 +46,7 @@ namespace PersonaEditorLib
             { ".gnf", FormatEnum.GNF },
             { ".file", FormatEnum.G1T },
             { ".tpc", FormatEnum.TPC },
+            { ".stex", FormatEnum.STEX },
             { ".cmp", FormatEnum.CMP },
             { ".spd", FormatEnum.SPD },
 
@@ -60,17 +62,30 @@ namespace PersonaEditorLib
             { ".atf", FormatEnum.ATF },
             { ".bmd", FormatEnum.BMD },
             { ".msg", FormatEnum.BMD },
+            { ".mbm", FormatEnum.MBM },
+            { ".dat", FormatEnum.P5T },
+            { ".bytes", FormatEnum.P5T },
             { ".ptp", FormatEnum.PTP }
         };
 
         /// <summary>
-        /// Tries to open a file with the specified data type.
+        /// Opens a file with the specified data type.
         /// </summary>
-        /// <param name="name">Name of file</param>
-        /// <param name="data">Data of file</param>
-        /// <param name="type">Type of file</param>
-        /// <returns>Return ObjectContainer for this file or null if an error occurred.</returns>
+        /// <remarks>
+        /// This legacy convenience method returns <see langword="null"/> when parsing fails.
+        /// Use <see cref="TryOpenFile(string, byte[], FormatEnum, out GameFile, out Exception)"/>
+        /// when the failure reason is required.
+        /// </remarks>
         public static GameFile OpenFile(string name, byte[] data, FormatEnum type)
+        {
+            TryOpenFile(name, data, type, out GameFile gameFile, out _);
+            return gameFile;
+        }
+
+        /// <summary>
+        /// Tries to open a file with the specified data type and returns the parsing error on failure.
+        /// </summary>
+        public static bool TryOpenFile(string name, byte[] data, FormatEnum type, out GameFile gameFile, out Exception error)
         {
             try
             {
@@ -102,7 +117,9 @@ namespace PersonaEditorLib
                 else if (type == FormatEnum.TPC)
                     Obj = new SpriteContainer.TPC(data);
                 else if (type == FormatEnum.CMP)
-                    Obj = new Sprite.DMPBM(data);
+                    Obj = OpenCmp(data);
+                else if (type == FormatEnum.STEX)
+                    Obj = new Sprite.STEX(data);
                 else if (type == FormatEnum.TMX)
                     Obj = new Sprite.TMX(data);
                 else if (type == FormatEnum.BF)
@@ -111,6 +128,10 @@ namespace PersonaEditorLib
                     Obj = new FileContainer.PM1(data);
                 else if (type == FormatEnum.CatherineBMD)
                     Obj = new Text.CatherineBMD(data);
+                else if (type == FormatEnum.MBM)
+                    Obj = new Text.MBM(data);
+                else if (type == FormatEnum.P5T)
+                    Obj = new Text.P5T(data);
                 else if (type == FormatEnum.BMD)
                     Obj = new Text.BMD(data);
                 else if (type == FormatEnum.ATF)
@@ -154,22 +175,54 @@ namespace PersonaEditorLib
                 else
                     Obj = new DAT(data);
 
-                return new GameFile(name, Obj);
+                gameFile = new GameFile(name, Obj);
+                error = null;
+                return true;
             }
-            catch
+            catch (Exception exception)
             {
-                return null;
+                gameFile = null;
+                error = exception;
+                return false;
             }
         }
 
         public static GameFile OpenFile(string name, byte[] data)
         {
-            var nameFormat = GetFormat(name);
-            var format = nameFormat == FormatEnum.SPR4 ? nameFormat : GetFormat(data);
-            if (format == FormatEnum.Unknown)
-                format = nameFormat;
+            TryOpenFile(name, data, out GameFile gameFile, out _);
+            return gameFile;
+        }
 
-            return OpenFile(name, data, format);
+        /// <summary>
+        /// Tries to detect and open a file, returning the parsing error on failure.
+        /// </summary>
+        public static bool TryOpenFile(string name, byte[] data, out GameFile gameFile, out Exception error)
+        {
+            try
+            {
+                var nameFormat = GetFormat(name);
+                var format = nameFormat == FormatEnum.SPR4 ? nameFormat : GetFormat(data);
+                if (format == FormatEnum.Unknown)
+                    format = nameFormat;
+
+                if (TryOpenFile(name, data, format, out gameFile, out error))
+                    return true;
+
+                // .dat is also commonly used for unrelated raw files. Keep those
+                // files available as DAT when they do not match the P5T layout.
+                if (nameFormat == FormatEnum.P5T
+                    && format == FormatEnum.P5T
+                    && string.Equals(Path.GetExtension(name), ".dat", StringComparison.OrdinalIgnoreCase))
+                    return TryOpenFile(name, data, FormatEnum.DAT, out gameFile, out error);
+
+                return false;
+            }
+            catch (Exception exception)
+            {
+                gameFile = null;
+                error = exception;
+                return false;
+            }
         }
 
         public static GameFile OpenFile(string path)
@@ -201,6 +254,8 @@ namespace PersonaEditorLib
                     return FormatEnum.FNT0;
                 else if (HasMagic(header, 0, 0x41, 0x54, 0x46, 0x00))
                     return FormatEnum.ATF;
+                else if (HasMagic(header, 4, 0x4D, 0x53, 0x47, 0x32))
+                    return FormatEnum.MBM;
 
                 if (HasMagic(header, 8, 0x31, 0x47, 0x53, 0x4D) || HasMagic(header, 8, 0x4D, 0x53, 0x47, 0x31))
                     return FormatEnum.BMD;
@@ -219,7 +274,7 @@ namespace PersonaEditorLib
             if (data.Length >= 4)
             {
                 ReadOnlySpan<byte> header = data;
-                if (HasMagic(header, 0, 0x78, 0x56, 0x34, 0x12))
+                if (HasMagic(header, 0, 0x78, 0x56, 0x34, 0x12) || HasMagic(header, 0, 0x12, 0x34, 0x56, 0x78))
                     return FormatEnum.CatherineBMD;
                 else if (HasMagic(header, 0, 0x46, 0x50, 0x41, 0x43))
                     return FormatEnum.PAC;
@@ -233,8 +288,37 @@ namespace PersonaEditorLib
                     return FormatEnum.GNF;
                 else if (HasMagic(header, 0, 0x48, 0x49, 0x50, 0x00))
                     return FormatEnum.HIP;
+                else if (HasMagic(header, 0, 0x53, 0x54, 0x45, 0x58))
+                    return FormatEnum.STEX;
             }
+
+            if (Sprite.STEX.IsStex(data))
+                return FormatEnum.STEX;
+
+            if (Text.P5T.IsP5T(data))
+                return FormatEnum.P5T;
+
             return FormatEnum.Unknown;
+        }
+
+        private static IGameData OpenCmp(byte[] data)
+        {
+            try
+            {
+                return new Sprite.DMPBM(data);
+            }
+            catch (Exception dmpbmException)
+            {
+                try
+                {
+                    return new Sprite.STEX(data);
+                }
+                catch (Exception stexException)
+                {
+                    throw new InvalidDataException("CMP: data is neither a supported DMPBM nor STEX texture.",
+                        new AggregateException(dmpbmException, stexException));
+                }
+            }
         }
 
         private static bool HasMagic(ReadOnlySpan<byte> data, int offset, byte a, byte b, byte c, byte d)

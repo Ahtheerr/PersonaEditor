@@ -376,7 +376,7 @@ namespace PersonaEditorLib.Text
         {
             ImportText(text, (str, msg) =>
             {
-                return str.Replace("\\n", "\n");
+                return str.NormalizeImportedText();
             });
         }
 
@@ -394,7 +394,7 @@ namespace PersonaEditorLib.Text
                     if (a.Data.Contains<byte>(0x0A))
                         count++;
 
-                return str.SplitByLineCount(charWidth, count);
+                return str.SplitByLineCountOrImportedRaw(charWidth, count);
             });
         }
 
@@ -408,7 +408,7 @@ namespace PersonaEditorLib.Text
         {
             ImportText(text, (str, msg) =>
             {
-                return str.SplitByWidth(charWidth, width);
+                return str.SplitByWidthOrImportedRaw(charWidth, width);
             });
         }
 
@@ -418,7 +418,7 @@ namespace PersonaEditorLib.Text
             foreach (var a in Msg)
                 foreach (var b in a.Strings)
                 {
-                    b.NewString = text[index];
+                    b.NewString = text[index].NormalizeImportedText();
                     index++;
                     if (index >= text.Length)
                         return;

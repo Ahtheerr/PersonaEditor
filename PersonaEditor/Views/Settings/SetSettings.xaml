@@ -68,6 +68,7 @@
 
                         <StackPanel Grid.Row="7" Grid.ColumnSpan="2">
                             <CheckBox Content="Import line by line (/lbl)" IsChecked="{Binding LineByLine}" Margin="0,4"/>
+                            <CheckBox Content="Aggressive text deduplication (/agr)" IsChecked="{Binding AggressiveDeduplication}" Margin="0,4"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>

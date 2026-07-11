@@ -40,7 +40,7 @@ namespace PersonaEditorLib
         {
             get
             {
-                if (Pixels == null | PixelWidth == 0) return true;
+                if (Pixels == null || PixelWidth == 0) return true;
                 else return false;
             }
         }
@@ -171,7 +171,7 @@ namespace PersonaEditorLib
 
         }
 
-        public static ImageData DrawText(IEnumerable<TextBaseElement> text, PersonaFont personaFont, Dictionary<int, byte> Shift, int LineSpacing)
+        public static ImageData DrawText(IEnumerable<TextBaseElement> text, PersonaFont personaFont, Dictionary<int, byte> Shift, int LineSpacing, PersonaEncoding encoding = null)
         {
             if (text == null || personaFont == null)
                 return new ImageData();
@@ -187,7 +187,12 @@ namespace PersonaEditorLib
                     {
                         int index = 0;
 
-                        if (0x20 <= a.Data[i] && a.Data[i] < 0x80)
+                        if (encoding != null && encoding.TryGetGlyphIndex(a.Data, i, a.Data.Length - i, out int customIndex, out int byteCount))
+                        {
+                            index = customIndex;
+                            i += byteCount - 1;
+                        }
+                        else if (0x20 <= a.Data[i] && a.Data[i] < 0x80)
                             index = a.Data[i];
                         else if (0x80 <= a.Data[i] && a.Data[i] < 0xF0)
                         {
@@ -339,10 +344,6 @@ namespace PersonaEditorLib
             {
                 return up;
             }
-            else if (up.Pixels == null & down.Pixels == null)
-            {
-                return new ImageData();
-            }
 
             byte[][] buffer = GetMergePixelsUD(up.Pixels, down.Pixels, h);
             return new ImageData(buffer, up.PixelFormat, buffer[0].Length, buffer.Length);
@@ -365,37 +366,6 @@ namespace PersonaEditorLib
                 return new ImageData(buffer, image.PixelFormat, buffer[0].Length, buffer.Length);
             }
             else return image;
-        }
-
-        static byte[] GetDataS(byte[][] buffer, PixelFormat pixelformat)
-        {
-            byte[] returned = new byte[buffer.Length * buffer[0].Length];
-            if (pixelformat.BitsPerPixel == 4)
-            {
-                int index = 0;
-                for (int i = 0; i < buffer.Length; i++)
-                {
-                    for (int k = 0; k < buffer[i].Length; k++)
-                    {
-                        if (k + 1 < buffer[i].Length)
-                        {
-                            returned[index] = Convert.ToByte((buffer[i][k] << 4) + buffer[i][k + 1]);
-                            index++;
-                        }
-                        else
-                        {
-                            returned[index] = Convert.ToByte(buffer[i][k] << 4);
-                            index++;
-                        }
-                        k++;
-                    }
-                }
-            }
-            else
-            {
-                return null;
-            }
-            return returned;
         }
 
         static byte[][] MovePixels(byte[][] buffer, int y)

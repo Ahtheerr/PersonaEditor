@@ -54,8 +54,8 @@ namespace PersonaEditorLib.Text
                 if (item.Index < 0 || item.Index >= entries.Count || string.IsNullOrEmpty(item.Text))
                     continue;
 
-                string text = width > 0 && charWidth != null ? item.Text.SplitByWidth(charWidth, width) : item.Text;
-                entries[item.Index].NewText = text.Replace("\\n", "\n");
+                string text = width > 0 && charWidth != null ? item.Text.SplitByWidthOrImportedRaw(charWidth, width) : item.Text.NormalizeImportedText();
+                entries[item.Index].NewText = text;
             }
         }
 

@@ -44,7 +44,8 @@ namespace PersonaEditorLib.Text
 
                 #region Header
 
-                if (reader.ReadInt32() != 7)
+                int version = reader.ReadInt32();
+                if (version != 7 && version != 0x07000000)
                     throw new Exception("BMD Read Error: (0x0) not 7");
                 int BMD_Size = reader.ReadInt32();
                 reader.ReadInt32(); // MagicNumber

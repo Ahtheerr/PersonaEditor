@@ -80,14 +80,14 @@ namespace PersonaEditor.ViewModels.Editors
         public void UpdateOldEncoding(string oldEncoding)
         {
             OldEncoding = Static.EncodingManager.GetPersonaEncoding(oldEncoding);
-            OldText.UpdateFont(Static.FontManager.GetPersonaFont(oldEncoding));
+            OldText.UpdateFont(Static.FontManager.GetPersonaFont(oldEncoding), OldEncoding as PersonaEditorLib.PersonaEncoding);
             Notify("OldString");
         }
 
         public void UpdateNewEncoding(string newEncoding)
         {
             NewEncoding = Static.EncodingManager.GetPersonaEncoding(newEncoding);
-            NewText.UpdateText(str.NewString.GetTextBases(NewEncoding), Static.FontManager.GetPersonaFont(newEncoding));
+            NewText.UpdateText(str.NewString.GetTextBases(NewEncoding), Static.FontManager.GetPersonaFont(newEncoding), NewEncoding as PersonaEditorLib.PersonaEncoding);
         }
 
         public void UpdateBackground(int backgroundIndex)
@@ -120,8 +120,8 @@ namespace PersonaEditor.ViewModels.Editors
             
             OldEncoding = Static.EncodingManager.GetPersonaEncoding(oldEncoding);
             NewEncoding = Static.EncodingManager.GetPersonaEncoding(newEncoding);
-            OldText = new TextVisual(Static.FontManager.GetPersonaFont(oldEncoding)) { Tag = "Old" };
-            NewText = new TextVisual(Static.FontManager.GetPersonaFont(newEncoding)) { Tag = "New" };
+            OldText = new TextVisual(Static.FontManager.GetPersonaFont(oldEncoding), OldEncoding as PersonaEditorLib.PersonaEncoding) { Tag = "Old" };
+            NewText = new TextVisual(Static.FontManager.GetPersonaFont(newEncoding), NewEncoding as PersonaEditorLib.PersonaEncoding) { Tag = "New" };
             OldText.IsEnable = ApplicationSettings.AppSetting.Default.PTPImageView;
             NewText.IsEnable = ApplicationSettings.AppSetting.Default.PTPImageView;
 

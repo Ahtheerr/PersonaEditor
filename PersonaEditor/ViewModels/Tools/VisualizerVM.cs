@@ -67,10 +67,8 @@ namespace PersonaEditor.ViewModels.Tools
                 PersonaEncoding = Static.EncodingManager.GetPersonaEncoding(_FontSelect);
                 PersonaFont = Static.FontManager.GetPersonaFont(Static.EncodingManager.GetPersonaEncodingName(_FontSelect));
                 Notify("FontSelect");
-                Text.UpdateText(_TextTB.GetTextBases(PersonaEncoding));
-                Name.UpdateText(_NameTB.GetTextBases(PersonaEncoding));
-                Text.UpdateFont(PersonaFont);
-                Name.UpdateFont(PersonaFont);
+                Text.UpdateText(_TextTB.GetTextBases(PersonaEncoding), PersonaFont, PersonaEncoding);
+                Name.UpdateText(_NameTB.GetTextBases(PersonaEncoding), PersonaFont, PersonaEncoding);
                 Text2HEX();
             }
         }
@@ -202,8 +200,8 @@ namespace PersonaEditor.ViewModels.Tools
 
         public VisualizerVM()
         {
-            Text = new TextVisual(PersonaFont) { Tag = "Text" };
-            Name = new TextVisual(PersonaFont) { Tag = "Name" };
+            Text = new TextVisual(PersonaFont, PersonaEncoding) { Tag = "Text" };
+            Name = new TextVisual(PersonaFont, PersonaEncoding) { Tag = "Name" };
             Text.VisualChanged += Text_VisualChanged;
             Name.VisualChanged += Name_VisualChanged;
 

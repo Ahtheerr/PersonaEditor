@@ -52,11 +52,13 @@ Comandos principais
 -------------------
 
 -exptext [TXT]
-  Exporta texto de PTP, BMD/MSG, ATF e listas de texto suportadas. Se o TXT for
+  Exporta texto de PTP, BMD/MSG, ATF, MBM/MSG2, Persona 5 Tactica (.dat/.bytes) e listas de texto
+  suportadas. Se o TXT for
   omitido, cria um TXT ao lado do arquivo de origem.
 
 -imptext [TXT]
-  Importa texto em PTP, BMD/MSG, ATF e listas de texto suportadas. Normalmente
+  Importa texto em PTP, BMD/MSG, ATF, MBM/MSG2, Persona 5 Tactica (.dat/.bytes) e listas de texto
+  suportadas. Normalmente
   deve ser seguido por `-save`.
 
 -expptp
@@ -118,6 +120,10 @@ Opções úteis
 /rmvspl
   Na exportação de texto, troca quebras de linha internas por espaços.
 
+/agr
+  Na exportação de texto por pasta, usa deduplicação agressiva por linha.
+  Por padrão, a deduplicação só junta arquivos inteiros idênticos.
+
 /auto LARGURA
   Na importação de texto PTP, quebra linhas automaticamente usando a largura da
   fonte selecionada. Exemplo: `/auto 580`.
@@ -178,10 +184,10 @@ Containers:
   BIN, PAC, SPR, SPR3, SPR6, BF, PM1, BVP, TBL, TPC, LB
 
 Imagens e texturas:
-  TMX, DDS, CTPK, G1T, CMP/DMPBM, HIP
+  TMX, DDS, CTPK, G1T, STEX, CMP/DMPBM/STEX, HIP
 
 Texto e fontes:
-  BMD/MSG, PTP, ATF, FNT, FNT0, sidecars ABC para fontes HIP
+  BMD/MSG, MBM/MSG2, Persona 5 Tactica (.dat/.bytes), PTP, ATF, FNT, FNT0, sidecars ABC para fontes HIP
 
 Arquivos desconhecidos ou crus podem aparecer como DAT/HEX quando exportados de
 containers.

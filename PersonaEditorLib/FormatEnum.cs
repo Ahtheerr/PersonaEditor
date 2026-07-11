@@ -32,6 +32,9 @@
         ATF,
         LB,
         CatherineBMD,
+        MBM,
+        P5T,
+        STEX,
         StringList
     }
 }

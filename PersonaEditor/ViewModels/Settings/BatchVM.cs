@@ -69,6 +69,12 @@ namespace PersonaEditor.ViewModels.Settings
             set => settings.BatchUseEncoding = value;
         }
 
+        public bool AggressiveDeduplication
+        {
+            get => settings.BatchAggressiveDeduplication;
+            set => settings.BatchAggressiveDeduplication = value;
+        }
+
         public int EncodingIndex
         {
             get

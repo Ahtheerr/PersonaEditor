@@ -164,6 +164,16 @@
                                         <editors:ATFEditor/>
                                     </Border>
                                 </DataTemplate>
+                                <DataTemplate DataType="{x:Type editorsVM:MBMEditorVM}">
+                                    <Border BorderBrush="Black" BorderThickness="1">
+                                        <editors:MBMEditor/>
+                                    </Border>
+                                </DataTemplate>
+                                <DataTemplate DataType="{x:Type editorsVM:P5TEditorVM}">
+                                    <Border BorderBrush="Black" BorderThickness="1">
+                                        <editors:P5TEditor/>
+                                    </Border>
+                                </DataTemplate>
                                 <DataTemplate DataType="{x:Type editorsVM:HEXEditorVM}">
                                     <Border BorderBrush="Black" BorderThickness="1">
                                         <editors:HEXEditor/>

@@ -59,6 +59,7 @@ namespace PersonaEditor.Classes.Visual
         Func<ImageData> GetData;
 
         PersonaFont font;
+        PersonaEncoding encoding;
 
         #region PrivateField
 
@@ -161,9 +162,9 @@ namespace PersonaEditor.Classes.Visual
         ImageData CreateData()
         {
             if (Text is IEnumerable<TextBaseElement> list)
-                return ImageData.DrawText(list, font, Static.FontMap.Shift, LineSpacing);
+                return ImageData.DrawText(list, font, Static.FontMap.Shift, LineSpacing, encoding);
             else if (Text is byte[] array)
-                return ImageData.DrawText(array.GetTextBases(), font, Static.FontMap.Shift, LineSpacing);
+                return ImageData.DrawText(encoding == null ? array.GetTextBases() : array.GetTextBases(encoding), font, Static.FontMap.Shift, LineSpacing, encoding);
             else return new ImageData();
         }
 
@@ -174,17 +175,21 @@ namespace PersonaEditor.Classes.Visual
             return new Rect(start, new Size(Width, Height));
         }
 
-        public void UpdateText(IEnumerable<TextBaseElement> textBases, PersonaFont font = null)
+        public void UpdateText(IEnumerable<TextBaseElement> textBases, PersonaFont font = null, PersonaEncoding encoding = null)
         {
             Text = textBases;
             if (font != null)
                 this.font = font;
+            if (encoding != null)
+                this.encoding = encoding;
             UpdateText();
         }
 
-        public void UpdateText(byte[] array)
+        public void UpdateText(byte[] array, PersonaEncoding encoding = null)
         {
             Text = array;
+            if (encoding != null)
+                this.encoding = encoding;
             UpdateText();
         }
 
@@ -209,9 +214,11 @@ namespace PersonaEditor.Classes.Visual
                 }
         }
 
-        public void UpdateFont(PersonaFont Font)
+        public void UpdateFont(PersonaFont Font, PersonaEncoding encoding = null)
         {
             this.font = Font;
+            if (encoding != null)
+                this.encoding = encoding;
             UpdateText();
         }
 
@@ -220,9 +227,10 @@ namespace PersonaEditor.Classes.Visual
             GetData = CreateData;
         }
 
-        public TextVisual(PersonaFont font) : this()
+        public TextVisual(PersonaFont font, PersonaEncoding encoding = null) : this()
         {
             this.font = font;
+            this.encoding = encoding;
         }
     }
 }

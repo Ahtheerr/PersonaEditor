@@ -115,14 +115,21 @@ namespace PersonaEditor.ViewModels.Tools
                 {
                     var fontName = Static.FontManager.GetPersonaFontName(_FontSelect);
                     var sourceDir = Static.FontManager.sourcedir;
-                    var mapPath = Path.Combine(sourceDir, fontName + ".FNTMAP");
+                    var mapPath = Path.Combine(sourceDir, fontName + ".FNTMAP2");
+                    var legacyMapPath = Path.Combine(sourceDir, fontName + ".FNTMAP");
 
+                    PersonaEncoding existingEncoding = Static.EncodingManager.GetPersonaEncoding(fontName);
                     PersonaEncoding personaEncoding = new PersonaEncoding();
                     foreach (var a in GlyphList)
                         if (a.Char.Length > 0)
-                            personaEncoding.Add(a.Index, a.Char[0]);
+                        {
+                            existingEncoding.TryGetCustomBytes(a.Index, out byte[] customBytes);
+                            personaEncoding.Add(a.Index, a.Char[0], customBytes);
+                        }
 
-                    personaEncoding.SaveFNTMAP(mapPath);
+                    personaEncoding.SaveFNTMAP2(mapPath);
+                    if (File.Exists(legacyMapPath))
+                        File.Delete(legacyMapPath);
 
                     Static.EncodingManager.Reload(fontName);
                 }

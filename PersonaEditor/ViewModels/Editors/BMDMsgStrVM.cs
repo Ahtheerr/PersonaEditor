@@ -20,7 +20,7 @@ namespace PersonaEditor.ViewModels.Editors
                 data = Text.GetTextBases(Static.EncodingManager.GetPersonaEncoding(sourceFont)).GetByteArray();
             else
             {
-                Text = data.GetTextBases().GetString(Static.EncodingManager.GetPersonaEncoding(sourceFont));
+                Text = data.GetTextBases(Static.EncodingManager.GetPersonaEncoding(sourceFont)).GetString(Static.EncodingManager.GetPersonaEncoding(sourceFont));
                 Notify("Text");
             }
         }
@@ -28,7 +28,7 @@ namespace PersonaEditor.ViewModels.Editors
         public void Update(int sourceFont)
         {
             this.sourceFont = sourceFont;
-            Text = data.GetTextBases().GetString(Static.EncodingManager.GetPersonaEncoding(sourceFont));
+            Text = data.GetTextBases(Static.EncodingManager.GetPersonaEncoding(sourceFont)).GetString(Static.EncodingManager.GetPersonaEncoding(sourceFont));
             Notify("Text");
         }
 
@@ -37,7 +37,7 @@ namespace PersonaEditor.ViewModels.Editors
             data = array;
             this.sourceFont = sourceFont;
 
-            Text = data.GetTextBases().GetString(Static.EncodingManager.GetPersonaEncoding(sourceFont));
+            Text = data.GetTextBases(Static.EncodingManager.GetPersonaEncoding(sourceFont)).GetString(Static.EncodingManager.GetPersonaEncoding(sourceFont));
             //  Style style = new Style(typeof(Paragraph));
             //  style.Setters.Add(new Setter(Block.MarginProperty, new Thickness(0)));
             //  Document.Resources.Add(typeof(Paragraph), style);

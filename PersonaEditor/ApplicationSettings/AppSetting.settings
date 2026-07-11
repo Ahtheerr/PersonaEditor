@@ -86,5 +86,8 @@
     <Setting Name="BatchEncoding" Type="System.String" Scope="User">
       <Value Profile="(Default)">UTF-8</Value>
     </Setting>
+    <Setting Name="BatchAggressiveDeduplication" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">False</Value>
+    </Setting>
   </Settings>
 </SettingsFile>

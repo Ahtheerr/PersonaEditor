@@ -170,7 +170,7 @@ namespace PersonaEditorCMD
         {
             foreach (var command in commands)
                 if (command.Command == CommandType.Export && command.Type == CommandSubType.Text && command.Value != "" && File.Exists(command.Value))
-                    RemoveDuplicateTextRows(command.Value, command.Parameters.FileEncoding);
+                    RemoveDuplicateTextRows(command.Value, command.Parameters.FileEncoding, command.Parameters.AggressiveDeduplication);
         }
 
         static void ProcessFile(GameFile file, IEnumerable<Argument> commands, string openedFileDir, string batchTextName = null)
@@ -302,6 +302,14 @@ namespace PersonaEditorCMD
             {
                 ExportCatherineBMDText(catherineBmd, objectFileName, value, openedFileDir, parameters);
             }
+            else if (objectFile.GameData is MBM mbm)
+            {
+                ExportMBMText(mbm, objectFileName, value, openedFileDir, parameters);
+            }
+            else if (objectFile.GameData is P5T p5t)
+            {
+                ExportP5TText(p5t, objectFileName, value, openedFileDir, parameters);
+            }
             else if (objectFile.GameData is BMD bmd)
             {
                 ExportPTPText(new PTP(bmd), objectFileName, value, openedFileDir, parameters);
@@ -330,6 +338,14 @@ namespace PersonaEditorCMD
             else if (objectFile.GameData is CatherineBMD catherineBmd)
             {
                 ImportCatherineBMDText(catherineBmd, objectFileName, value, openedFileDir, parameters);
+            }
+            else if (objectFile.GameData is MBM mbm)
+            {
+                ImportMBMText(mbm, objectFileName, value, openedFileDir, parameters);
+            }
+            else if (objectFile.GameData is P5T p5t)
+            {
+                ImportP5TText(p5t, objectFileName, value, openedFileDir, parameters);
             }
             else if (objectFile.GameData is BMD bmd)
             {
@@ -375,6 +391,18 @@ namespace PersonaEditorCMD
             File.AppendAllLines(path, bmd.ExportText(objectFileName, parameters.RemoveSplit));
         }
 
+        static void ExportMBMText(MBM mbm, string objectFileName, string value, string openedFileDir, Parameters parameters)
+        {
+            string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
+            File.AppendAllLines(path, mbm.ExportText(objectFileName, parameters.RemoveSplit));
+        }
+
+        static void ExportP5TText(P5T p5t, string objectFileName, string value, string openedFileDir, Parameters parameters)
+        {
+            string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
+            File.AppendAllLines(path, p5t.ExportText(objectFileName, parameters.RemoveSplit));
+        }
+
         static bool ImportATFText(ATF atf, string objectFileName, string value, string openedFileDir, Parameters parameters)
         {
             string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
@@ -418,6 +446,49 @@ namespace PersonaEditorCMD
                 bmd.ImportTextByIndex(imported, Static.NewFont().GetCharWidth(Static.NewEncoding()), parameters.Width);
             else
                 bmd.ImportTextByIndex(imported);
+            return true;
+        }
+
+        static bool ImportMBMText(MBM mbm, string objectFileName, string value, string openedFileDir, Parameters parameters)
+        {
+            string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
+
+            if (!File.Exists(path))
+                return false;
+
+            var rows = GetTextRows(path, parameters.FileEncoding);
+            LineMap map = new LineMap(parameters.Map);
+            var imported = new List<(int Id, string Identifier, string Text)>();
+
+            foreach (var row in rows)
+                if (TryGetMBMTranslation(row, objectFileName, map, out int id, out string identifier, out string text))
+                    imported.Add((id, identifier, text));
+
+            if (parameters.Width > 0)
+                mbm.ImportTextByString(imported, Static.NewFont().GetCharWidth(Static.NewEncoding()), parameters.Width);
+            else
+                mbm.ImportTextByString(imported);
+            return true;
+        }
+
+        static bool ImportP5TText(P5T p5t, string objectFileName, string value, string openedFileDir, Parameters parameters)
+        {
+            string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
+
+            if (!File.Exists(path))
+                return false;
+
+            List<string[]> rows = GetTextRows(path, parameters.FileEncoding);
+            LineMap map = new LineMap(parameters.Map);
+            var imported = new List<(int Index, string Key, string Identifier, string Text)>();
+            foreach (string[] row in rows)
+                if (TryGetP5TTranslation(row, objectFileName, map, out int index, out string key, out string identifier, out string text))
+                    imported.Add((index, key, identifier, text));
+
+            if (imported.Count == 0)
+                return false;
+
+            p5t.ImportText(imported);
             return true;
         }
 
@@ -480,6 +551,105 @@ namespace PersonaEditorCMD
             {
                 text = row[^1];
                 return !string.IsNullOrEmpty(text);
+            }
+
+            return false;
+        }
+
+        static bool TryGetMBMTranslation(string[] row, string objectFileName, LineMap map, out int id, out string identifier, out string text)
+        {
+            id = -1;
+            identifier = "";
+            text = "";
+
+            if (row.Length >= 6 && IsMatchingFileName(row[0], objectFileName) && int.TryParse(row[1], out id))
+            {
+                identifier = row[2];
+                text = row[5];
+                return !string.IsNullOrEmpty(text);
+            }
+
+            if (row.Length >= 5 && IsMatchingFileName(row[0], objectFileName) && int.TryParse(row[1], out id))
+            {
+                identifier = "0";
+                text = row[4];
+                return !string.IsNullOrEmpty(text);
+            }
+
+            if (row.Length >= 4 && IsMatchingFileName(row[0], objectFileName) && int.TryParse(row[1], out id))
+            {
+                identifier = "0";
+                text = row[3];
+                return !string.IsNullOrEmpty(text);
+            }
+
+            if (row.Length >= map.MinLength)
+            {
+                int fileNameColumn = map[LineMap.Type.FileName];
+                if (fileNameColumn >= 0 && !IsMatchingFileName(row[fileNameColumn], objectFileName))
+                    return false;
+
+                int messageColumn = map[LineMap.Type.MSGindex];
+                int stringColumn = map[LineMap.Type.StringIndex];
+                int textColumn = map[LineMap.Type.NewText];
+                if (messageColumn >= 0 && stringColumn >= 0 && textColumn >= 0 && int.TryParse(row[messageColumn], out id))
+                {
+                    identifier = row[stringColumn];
+                    text = row[textColumn];
+                    return !string.IsNullOrEmpty(text);
+                }
+            }
+
+            if (row.Length >= 3 && int.TryParse(row[0], out id))
+            {
+                identifier = "0";
+                text = row[^1];
+                return !string.IsNullOrEmpty(text);
+            }
+
+            return false;
+        }
+
+        static bool TryGetP5TTranslation(string[] row, string objectFileName, LineMap map,
+            out int index, out string key, out string identifier, out string text)
+        {
+            index = -1;
+            key = "";
+            identifier = "";
+            text = "";
+
+            if (row.Length >= 6 && IsMatchingFileName(row[0], objectFileName) && int.TryParse(row[1], out index))
+            {
+                key = row[2];
+                identifier = row[3];
+                text = row[5];
+                return true;
+            }
+
+            if (row.Length >= map.MinLength)
+            {
+                int fileNameColumn = map[LineMap.Type.FileName];
+                if (fileNameColumn >= 0 && !IsMatchingFileName(row[fileNameColumn], objectFileName))
+                    return false;
+
+                int indexColumn = map[LineMap.Type.MSGindex];
+                int keyColumn = map[LineMap.Type.StringIndex];
+                int textColumn = map[LineMap.Type.NewText];
+                int identifierColumn = map[LineMap.Type.MSGname];
+                if (indexColumn >= 0 && keyColumn >= 0 && textColumn >= 0
+                    && int.TryParse(row[indexColumn], out index))
+                {
+                    key = row[keyColumn];
+                    identifier = identifierColumn >= 0 ? row[identifierColumn] : "";
+                    text = row[textColumn];
+                    return true;
+                }
+            }
+
+            if (row.Length >= 2 && int.TryParse(row[0], out index))
+            {
+                text = row[^1];
+                return true;
             }
 
             return false;
@@ -597,37 +767,8 @@ namespace PersonaEditorCMD
             return Path.Combine(parts.Skip(parts.Length - count).ToArray());
         }
 
-        static void RemoveDuplicateTextRows(string path, Encoding encoding)
-        {
-            string[] lines = File.ReadAllLines(path, encoding);
-            Dictionary<string, string[]> rows = new Dictionary<string, string[]>();
-
-            foreach (string line in lines)
-            {
-                string[] columns = line.Split('\t');
-                if (columns.Length <= 1)
-                {
-                    rows.TryAdd(line, new[] { line });
-                    continue;
-                }
-
-                string key = string.Join('\t', columns.Skip(1));
-                if (rows.TryGetValue(key, out string[] existing))
-                    existing[0] = MergeFileNames(existing[0], columns[0]);
-                else
-                    rows.Add(key, columns);
-            }
-
-            File.WriteAllLines(path, rows.Values.Select(x => string.Join('\t', x)), encoding);
-        }
-
-        static string MergeFileNames(string first, string second)
-        {
-            return string.Join("|", first.Split('|')
-                .Concat(second.Split('|'))
-                .Where(x => x != "")
-                .Distinct(StringComparer.CurrentCultureIgnoreCase));
-        }
+        static void RemoveDuplicateTextRows(string path, Encoding encoding, bool aggressive)
+            => TextExportDeduplicator.RemoveDuplicateTextRows(path, encoding, aggressive);
 
         static void ExportByType(GameFile objectFile, string value, string openedFileDir, Parameters parameters)
         {

@@ -11,6 +11,10 @@
 * Graphics and fonts: FNT; FNT0; TMX; DDS;
 * Text: BMD (.bmd, .msg); PTP;
 
+### Persona 5 Tactica
+
+* Text: P5T (.dat, .bytes);
+
 ### Persona Q/Q2
 
 * Graphic containers: SPR3; TPC;
@@ -36,6 +40,10 @@
 
 * Graphic containers: APK; (NOT THE SAME FORMAT AS METAPHOR'S APK)
 * Text: BMD;
+
+### Shin Megami Tensei IV: Apocalypse
+
+* Text: MSG2 (.mbm);
 
 ### Digital Devil Saga
 

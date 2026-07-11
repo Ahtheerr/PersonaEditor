@@ -76,6 +76,8 @@ namespace PersonaEditorCMD.ArgumentHandler
                 return FormatEnum.GNF;
             else if (type == "tpc")
                 return FormatEnum.TPC;
+            else if (type == "stex")
+                return FormatEnum.STEX;
             else if (type == "tmx")
                 return FormatEnum.TMX;
             else if (type == "bf")
@@ -86,6 +88,10 @@ namespace PersonaEditorCMD.ArgumentHandler
                 return FormatEnum.BMD;
             else if (type == "atf")
                 return FormatEnum.ATF;
+            else if (type == "mbm")
+                return FormatEnum.MBM;
+            else if (type == "p5t" || type == "dat" || type == "bytes")
+                return FormatEnum.P5T;
             else if (type == "fnt")
                 return FormatEnum.FNT;
             else if (type == "ctpk")

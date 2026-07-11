@@ -318,5 +318,13 @@ namespace PersonaEditor.ApplicationSettings {
             get { return ((string)(this["BatchEncoding"])); }
             set { this["BatchEncoding"] = value; }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool BatchAggressiveDeduplication {
+            get { return ((bool)(this["BatchAggressiveDeduplication"])); }
+            set { this["BatchAggressiveDeduplication"] = value; }
+        }
     }
 }

@@ -2,6 +2,7 @@
 using AuxiliaryLibraries.Tools;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -10,9 +11,31 @@ namespace PersonaEditorLib.Text
 {
     public static class Extension
     {
+        private const string RawNoAutoPrefix = "[RN]";
+
+        public static string NormalizeImportedText(this string text)
+        {
+            text ??= string.Empty;
+            if (text.StartsWith(RawNoAutoPrefix, StringComparison.OrdinalIgnoreCase))
+                text = text.Substring(RawNoAutoPrefix.Length);
+            return text.Replace("\\n", "\n");
+        }
+
+        public static string SplitByWidthOrImportedRaw(this string text, Dictionary<char, int> charWidth, int width)
+            => IsImportedRaw(text) ? text.NormalizeImportedText() : text.SplitByWidth(charWidth, width);
+
+        public static string SplitByLineCountOrImportedRaw(this string text, Dictionary<char, int> charWidth, int lineCount)
+            => IsImportedRaw(text) ? text.NormalizeImportedText() : text.SplitByLineCount(charWidth, lineCount);
+
+        private static bool IsImportedRaw(string text)
+            => text != null && text.StartsWith(RawNoAutoPrefix, StringComparison.OrdinalIgnoreCase);
+
         public static IEnumerable<TextBaseElement> GetTextBases(this string s, Encoding enc)
         {
-            List<TextBaseElement> MyByteArrayList = new List<TextBaseElement>();
+            if (s == null)
+                throw new ArgumentNullException(nameof(s));
+            if (enc == null)
+                throw new ArgumentNullException(nameof(enc));
 
             foreach (var a in Regex.Split(s, "(\r\n|\r|\n)"))
                 if (Regex.IsMatch(a, "\r\n|\r|\n"))
@@ -27,25 +50,29 @@ namespace PersonaEditorLib.Text
 
         public static IEnumerable<TextBaseElement> GetTextBases(this byte[] array)
         {
-            List<TextBaseElement> returned = new List<TextBaseElement>();
+            if (array == null)
+                throw new ArgumentNullException(nameof(array));
 
             List<byte> temp = new List<byte>();
 
             for (int i = 0; i < array.Length; i++)
             {
-                if (0x20 <= array[i] & array[i] < 0x80)
+                if (0x20 <= array[i] && array[i] < 0x80)
                 {
                     temp.Add(array[i]);
                 }
-                else if (0x80 <= array[i] & array[i] < 0xF0)
+                else if (0x80 <= array[i] && array[i] < 0xF0)
                 {
+                    if (i + 1 >= array.Length)
+                        throw new InvalidDataException("Text data ends with an incomplete double-byte character.");
+
                     temp.Add(array[i]);
                     i++;
                     temp.Add(array[i]);
                 }
                 else
                 {
-                    if (0x00 <= array[i] & array[i] < 0x20)
+                    if (0x00 <= array[i] && array[i] < 0x20)
                     {
                         if (temp.Count != 0)
                         {
@@ -67,6 +94,9 @@ namespace PersonaEditorLib.Text
 
                         temp.Add(array[i]);
                         int count = (array[i] - 0xF0) * 2 - 1;
+                        if (count > array.Length - i - 1)
+                            throw new InvalidDataException("Text data ends with an incomplete control sequence.");
+
                         for (int k = 0; k < count; k++)
                         {
                             i++;
@@ -86,6 +116,65 @@ namespace PersonaEditorLib.Text
             }
         }
 
+        public static IEnumerable<TextBaseElement> GetTextBases(this byte[] array, global::PersonaEditorLib.PersonaEncoding encoding)
+        {
+            if (array == null)
+                throw new ArgumentNullException(nameof(array));
+            if (encoding == null)
+                throw new ArgumentNullException(nameof(encoding));
+
+            List<byte> textBytes = new List<byte>();
+            for (int position = 0; position < array.Length;)
+            {
+                if (encoding.TryGetGlyphIndex(array, position, array.Length - position, out _, out int byteCount))
+                {
+                    textBytes.AddRange(array.Skip(position).Take(byteCount));
+                    position += byteCount;
+                    continue;
+                }
+
+                if (textBytes.Count > 0)
+                {
+                    yield return new TextBaseElement(true, textBytes.ToArray());
+                    textBytes.Clear();
+                }
+
+                byte value = array[position++];
+                if (value < 0x20)
+                {
+                    yield return new TextBaseElement(false, new[] { value });
+                    continue;
+                }
+
+                if (value < 0xF0)
+                {
+                    if (position >= array.Length)
+                        throw new InvalidDataException("Text data ends with an incomplete double-byte character.");
+
+                    textBytes.Add(value);
+                    textBytes.Add(array[position++]);
+                    continue;
+                }
+
+                int payloadLength = Math.Max(0, (value - 0xF0) * 2 - 1);
+                if (payloadLength > array.Length - position)
+                    throw new InvalidDataException("Text data ends with an incomplete control sequence.");
+
+                byte[] control = new byte[payloadLength + 1];
+                control[0] = value;
+                if (payloadLength > 0)
+                {
+                    Buffer.BlockCopy(array, position, control, 1, payloadLength);
+                    position += payloadLength;
+                }
+
+                yield return new TextBaseElement(false, control);
+            }
+
+            if (textBytes.Count > 0)
+                yield return new TextBaseElement(true, textBytes.ToArray());
+        }
+
         public static List<string> SplitBySystem(this string str)
         {
             List<string> returned = new List<string>();
@@ -102,6 +191,9 @@ namespace PersonaEditorLib.Text
         
         public static string SplitByWidth(this string String, Dictionary<char, int> charWidth, int width)
         {
+            if (width <= 0)
+                throw new ArgumentOutOfRangeException(nameof(width));
+
             var temp = GetStringWidth(String, charWidth);
             List<string> tempStr = temp.Item1;
             List<int> tempWidth = temp.Item2;
@@ -118,7 +210,7 @@ namespace PersonaEditorLib.Text
                         widthsum += tempWidth[i];
                         input += tempStr[i];
                     }
-                    else if (i + 1 < tempStr.Count & tempStr[i + 1].Equals("{0A}", StringComparison.CurrentCultureIgnoreCase))
+                    else if (i + 1 < tempStr.Count && tempStr[i + 1].Equals("{0A}", StringComparison.CurrentCultureIgnoreCase))
                     {
                         widthsum += tempWidth[i];
                         input += tempStr[i];
@@ -148,6 +240,9 @@ namespace PersonaEditorLib.Text
 
         public static string SplitByLineCount(this string String, Dictionary<char, int> charWidth, int lineCount)
         {
+            if (lineCount <= 0)
+                throw new ArgumentOutOfRangeException(nameof(lineCount));
+
             var temp = GetStringWidth(String, charWidth);
 
             List<string> tempStr = temp.Item1;
@@ -181,6 +276,11 @@ namespace PersonaEditorLib.Text
 
         private static (List<string>, List<int>) GetStringWidth(string str, Dictionary<char, int> charWidth)
         {
+            if (str == null)
+                throw new ArgumentNullException(nameof(str));
+            if (charWidth == null)
+                throw new ArgumentNullException(nameof(charWidth));
+
             string input = String.Join(" ", Regex.Split(str, @"\\n|\r\n|\r|\n"));
 
             List<string> tempStr = new List<string>();
@@ -190,13 +290,17 @@ namespace PersonaEditorLib.Text
             var split = input.SplitBySystem();
             foreach (var a in split)
             {
-                try
+                bool isControlCode = a.Length >= 2
+                    && a[0] == '{'
+                    && a[a.Length - 1] == '}'
+                    && StringTool.TryParseArray(a.Substring(1, a.Length - 2), out _);
+
+                if (isControlCode)
                 {
-                    StringTool.SplitString(a.Substring(1, a.Length - 2), ' ');
                     tempStr.Add(a);
                     tempBool.Add(false);
                 }
-                catch
+                else
                 {
                     foreach (var b in Regex.Split(a, @"( )").Where(x => x != ""))
                     {
