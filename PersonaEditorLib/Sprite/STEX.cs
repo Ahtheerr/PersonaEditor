@@ -51,7 +51,7 @@ namespace PersonaEditorLib.Sprite
                 if (magic != "STEX")
                     throw new InvalidDataException("STEX: wrong magic.");
 
-                uint zero = reader.ReadUInt32();
+                uint flags = reader.ReadUInt32();
                 uint constant = reader.ReadUInt32();
                 width = reader.ReadInt32();
                 height = reader.ReadInt32();
@@ -59,7 +59,7 @@ namespace PersonaEditorLib.Sprite
                 uint imageFormat = reader.ReadUInt32();
                 dataSize = reader.ReadInt32();
 
-                if (zero != 0 || constant != 0xDE1)
+                if (flags > 1 || constant != 0xDE1)
                     throw new InvalidDataException("STEX: invalid header.");
                 if (width <= 0 || height <= 0 || dataSize <= 0)
                     throw new InvalidDataException("STEX: invalid dimensions or data size.");

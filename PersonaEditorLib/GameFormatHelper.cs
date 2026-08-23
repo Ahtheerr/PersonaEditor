@@ -25,6 +25,7 @@ namespace PersonaEditorLib
             { ".arc",  FormatEnum.BIN },
             { ".dds2", FormatEnum.BIN },
             { ".gsd",  FormatEnum.BIN },
+            { ".eve",  FormatEnum.EVE },
             { ".fbin", FormatEnum.FBIN },
 
             { ".bf",  FormatEnum.BF  },
@@ -55,6 +56,7 @@ namespace PersonaEditorLib
             { ".fnt", FormatEnum.FNT },
             { ".tmx", FormatEnum.TMX },
             { ".dds", FormatEnum.DDS },
+            { ".tga", FormatEnum.TGA },
             { ".ctpk", FormatEnum.CTPK },
             { ".amt", FormatEnum.CTPK },
             { ".hip", FormatEnum.HIP },
@@ -95,7 +97,9 @@ namespace PersonaEditorLib
                 if (type == FormatEnum.BIN)
                     Obj = FileContainer.FBIN.IsFbin(data)
                         ? new FileContainer.FBIN(data, name)
-                        : new FileContainer.BIN(data);
+                        : FileContainer.EVENTBIN.IsEventBin(data)
+                            ? new FileContainer.EVENTBIN(data)
+                            : new FileContainer.BIN(data);
                 else if (type == FormatEnum.PAC)
                     try
                     {
@@ -135,6 +139,10 @@ namespace PersonaEditorLib
                     Obj = new Text.MBM(data);
                 else if (type == FormatEnum.P5T)
                     Obj = new Text.P5T(data);
+                else if (type == FormatEnum.EVENTBIN)
+                    Obj = new FileContainer.EVENTBIN(data);
+                else if (type == FormatEnum.EVE)
+                    Obj = new FileContainer.EVE(data);
                 else if (type == FormatEnum.FBIN)
                     Obj = new FileContainer.FBIN(data, name);
                 else if (type == FormatEnum.UASSETBMD)
@@ -173,6 +181,8 @@ namespace PersonaEditorLib
                     {
                         Obj = new Sprite.DDSAtlus(data);
                     }
+                else if (type == FormatEnum.TGA)
+                    Obj = new Sprite.TGA(data);
                 else if (type == FormatEnum.CTPK)
                     Obj = new Sprite.CTPK(data);
                 else if (type == FormatEnum.HIP)
@@ -208,7 +218,7 @@ namespace PersonaEditorLib
             try
             {
                 var nameFormat = GetFormat(name);
-                var format = nameFormat == FormatEnum.SPR4 ? nameFormat : GetFormat(data);
+                var format = nameFormat is FormatEnum.SPR4 or FormatEnum.TGA ? nameFormat : GetFormat(data);
                 if (format == FormatEnum.Unknown)
                     format = nameFormat;
 
@@ -314,6 +324,12 @@ namespace PersonaEditorLib
 
             if (Text.P5T.IsP5T(data))
                 return FormatEnum.P5T;
+
+            if (FileContainer.EVENTBIN.IsEventBin(data))
+                return FormatEnum.EVENTBIN;
+
+            if (FileContainer.EVE.IsEve(data))
+                return FormatEnum.EVE;
 
             if (FileContainer.UAssetBMD.IsUAssetBmd(data))
                 return FormatEnum.UASSETBMD;

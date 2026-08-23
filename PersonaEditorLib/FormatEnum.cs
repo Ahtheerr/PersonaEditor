@@ -36,6 +36,9 @@
         P5T,
         STEX,
         StringList,
+        EVENTBIN,
+        EVE,
+        TGA,
         FBIN,
         UASSETBMD
     }

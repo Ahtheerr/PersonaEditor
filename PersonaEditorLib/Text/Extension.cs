@@ -64,7 +64,10 @@ namespace PersonaEditorLib.Text
                 else if (0x80 <= array[i] && array[i] < 0xF0)
                 {
                     if (i + 1 >= array.Length)
-                        throw new InvalidDataException("Text data ends with an incomplete double-byte character.");
+                    {
+                        yield return new TextBaseElement(false, array.Skip(i).ToArray());
+                        yield break;
+                    }
 
                     temp.Add(array[i]);
                     i++;
@@ -95,7 +98,10 @@ namespace PersonaEditorLib.Text
                         temp.Add(array[i]);
                         int count = (array[i] - 0xF0) * 2 - 1;
                         if (count > array.Length - i - 1)
-                            throw new InvalidDataException("Text data ends with an incomplete control sequence.");
+                        {
+                            yield return new TextBaseElement(false, array.Skip(i).ToArray());
+                            yield break;
+                        }
 
                         for (int k = 0; k < count; k++)
                         {
@@ -149,7 +155,10 @@ namespace PersonaEditorLib.Text
                 if (value < 0xF0)
                 {
                     if (position >= array.Length)
-                        throw new InvalidDataException("Text data ends with an incomplete double-byte character.");
+                    {
+                        yield return new TextBaseElement(false, array.Skip(position - 1).ToArray());
+                        yield break;
+                    }
 
                     textBytes.Add(value);
                     textBytes.Add(array[position++]);
@@ -158,7 +167,10 @@ namespace PersonaEditorLib.Text
 
                 int payloadLength = Math.Max(0, (value - 0xF0) * 2 - 1);
                 if (payloadLength > array.Length - position)
-                    throw new InvalidDataException("Text data ends with an incomplete control sequence.");
+                {
+                    yield return new TextBaseElement(false, array.Skip(position - 1).ToArray());
+                    yield break;
+                }
 
                 byte[] control = new byte[payloadLength + 1];
                 control[0] = value;

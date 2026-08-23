@@ -6,6 +6,7 @@ using System.Linq;
 using System.Xml.Linq;
 using PersonaEditorLib;
 using PersonaEditorLib.Text;
+using PersonaEditorLib.FileContainer;
 using AuxiliaryLibraries.WPF.Wrapper;
 using PersonaEditorCMD.ArgumentHandler;
 using PersonaEditorLib.Other;
@@ -311,6 +312,10 @@ namespace PersonaEditorCMD
             {
                 ExportP5TText(p5t, objectFileName, value, openedFileDir, parameters);
             }
+            else if (objectFile.GameData is EVE eve)
+            {
+                ExportEVEText(eve, objectFileName, value, openedFileDir, parameters);
+            }
             else if (objectFile.GameData is BMD bmd)
             {
                 ExportPTPText(new PTP(bmd), objectFileName, value, openedFileDir, parameters, GetOldEncoding(bmd));
@@ -347,6 +352,10 @@ namespace PersonaEditorCMD
             else if (objectFile.GameData is P5T p5t)
             {
                 ImportP5TText(p5t, objectFileName, value, openedFileDir, parameters);
+            }
+            else if (objectFile.GameData is EVE eve)
+            {
+                ImportEVEText(eve, objectFileName, value, openedFileDir, parameters);
             }
             else if (objectFile.GameData is BMD bmd)
             {
@@ -410,6 +419,12 @@ namespace PersonaEditorCMD
         {
             string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
             File.AppendAllLines(path, p5t.ExportText(objectFileName, parameters.RemoveSplit));
+        }
+
+        static void ExportEVEText(EVE eve, string objectFileName, string value, string openedFileDir, Parameters parameters)
+        {
+            string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
+            File.AppendAllLines(path, eve.ExportText(objectFileName, parameters.RemoveSplit));
         }
 
         static bool ImportATFText(ATF atf, string objectFileName, string value, string openedFileDir, Parameters parameters)
@@ -498,6 +513,43 @@ namespace PersonaEditorCMD
                 return false;
 
             p5t.ImportText(imported);
+            return true;
+        }
+
+        static bool ImportEVEText(EVE eve, string objectFileName, string value, string openedFileDir, Parameters parameters)
+        {
+            string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
+
+            if (!File.Exists(path))
+                return false;
+
+            List<string[]> rows = GetTextRows(path, parameters.FileEncoding);
+            var importedRows = new List<(int Index, string Speaker, string Text)>();
+            var legacyImported = new List<(int Index, string Text)>();
+            foreach (string[] row in rows)
+            {
+                if (row.Length < 3 || !IsMatchingFileName(row[0], objectFileName)
+                    || !int.TryParse(row[1], out int index))
+                    continue;
+
+                if (row.Length >= 4
+                    && (row[2].Equals("Text", StringComparison.OrdinalIgnoreCase)
+                        || row[2].Equals("Speaker", StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (row[3] != "")
+                        legacyImported.Add((index, row[3]));
+                }
+                else if (row.Length >= 4 && (row[2] != "" || row[3] != ""))
+                    importedRows.Add((index, row[2], row[3]));
+                else if (row[2] != "")
+                    legacyImported.Add((index, row[2]));
+            }
+
+            if (importedRows.Count == 0 && legacyImported.Count == 0)
+                return false;
+
+            eve.ImportTextRows(importedRows);
+            eve.ImportText(legacyImported);
             return true;
         }
 

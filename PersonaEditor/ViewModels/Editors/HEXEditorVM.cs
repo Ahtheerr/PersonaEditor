@@ -15,7 +15,7 @@ namespace PersonaEditor.ViewModels.Editors
         public HEXEditorVM(DAT hex)
         {
             this.hex = hex;
-            MemoryStream = new MemoryStream(hex.Data);
+            MemoryStream = new MemoryStream(hex.GetData());
             HexEditorUserControlVM.SetStream(MemoryStream);
         }
 

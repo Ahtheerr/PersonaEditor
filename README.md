@@ -55,6 +55,10 @@
 
 * Containers: LB;
 
+### Devil Summoner: Soul Hackers
+
+* Graphics: NintendoWare TGA (.tga);
+
 ### Devil Survivor Overclocked
 
 * Graphics: DMPBM (.cmp);

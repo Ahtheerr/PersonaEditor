@@ -60,6 +60,10 @@ namespace PersonaEditorCMD.ArgumentHandler
                 return FormatEnum.PAC;
             else if (type == "gsd")
                 return FormatEnum.BIN;
+            else if (type == "eventbin")
+                return FormatEnum.EVENTBIN;
+            else if (type == "eve")
+                return FormatEnum.EVE;
             else if (type == "spr")
                 return FormatEnum.SPR;
             else if (type == "spr3")

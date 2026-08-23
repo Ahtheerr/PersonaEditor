@@ -1,4 +1,5 @@
 ﻿using PersonaEditorLib;
+using PersonaEditorLib.FileContainer;
 using PersonaEditorLib.Other;
 using PersonaEditorLib.SpriteContainer;
 using PersonaEditorLib.Text;
@@ -98,6 +99,9 @@ namespace PersonaEditor.ViewModels
                     break;
                 case FormatEnum.P5T:
                     DataContext = new P5TEditorVM(sender.PersonaFile.GameData as P5T, sender.PersonaFile.Name);
+                    break;
+                case FormatEnum.EVE:
+                    DataContext = new EVEEditorVM(sender.PersonaFile.GameData as EVE, sender.PersonaFile.Name);
                     break;
                 case FormatEnum.ATF:
                     DataContext = new ATFEditorVM(sender.PersonaFile.GameData as ATF);

@@ -19,6 +19,7 @@ namespace PersonaEditorLib
             {
                 0x10 => DecompressLz10(data, size),
                 0x11 => DecompressLz11(data, size),
+                0x30 => DecompressRle(data, size),
                 _ => throw new InvalidDataException("CMP: unsupported compression header.")
             };
         }
@@ -131,6 +132,46 @@ namespace PersonaEditorLib
                     }
 
                     CopyBackReference(output, ref outputOffset, distance, length);
+                }
+            }
+
+            return output;
+        }
+
+        private static byte[] DecompressRle(byte[] data, int size)
+        {
+            byte[] output = new byte[size];
+            int inputOffset = 4;
+            int outputOffset = 0;
+
+            while (outputOffset < output.Length)
+            {
+                if (inputOffset >= data.Length)
+                    throw new InvalidDataException("CMP: truncated RLE data.");
+
+                byte control = data[inputOffset++];
+                bool compressed = (control & 0x80) != 0;
+                int length = (control & 0x7F) + (compressed ? 3 : 1);
+                if (length > output.Length - outputOffset)
+                    throw new InvalidDataException("CMP: RLE block exceeds the decompressed size.");
+
+                if (compressed)
+                {
+                    if (inputOffset >= data.Length)
+                        throw new InvalidDataException("CMP: truncated RLE run.");
+
+                    byte value = data[inputOffset++];
+                    for (int i = 0; i < length; i++)
+                        output[outputOffset++] = value;
+                }
+                else
+                {
+                    if (length > data.Length - inputOffset)
+                        throw new InvalidDataException("CMP: truncated RLE literal block.");
+
+                    Buffer.BlockCopy(data, inputOffset, output, outputOffset, length);
+                    inputOffset += length;
+                    outputOffset += length;
                 }
             }
 
