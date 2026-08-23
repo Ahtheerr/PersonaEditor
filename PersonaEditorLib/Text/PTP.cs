@@ -16,6 +16,8 @@ namespace PersonaEditorLib.Text
 
         public List<PTPMSG> Msg { get; } = new List<PTPMSG>();
 
+        public bool IsReload { get; private set; }
+
         #endregion
 
         public PTP(byte[] data)
@@ -33,6 +35,7 @@ namespace PersonaEditorLib.Text
 
         public PTP(BMD bmd)
         {
+            IsReload = bmd.IsReload;
             foreach (var name in bmd.Name)
                 Names.Add(new PTPName
                 {
@@ -50,12 +53,12 @@ namespace PersonaEditorLib.Text
                     CharacterIndex = msgs.NameIndex
                 };
 
-                ParseStrings(temp.Strings, msgs.MsgStrings);
+                ParseStrings(temp.Strings, msgs.MsgStrings, bmd.IsReload);
                 Msg.Add(temp);
             }
         }
 
-        public static void ParseStrings(IList<PTPMSGstr> Strings, byte[][] SourceBytes)
+        public static void ParseStrings(IList<PTPMSGstr> Strings, byte[][] SourceBytes, bool reload = false)
         {
             Strings.Clear();
 
@@ -64,7 +67,7 @@ namespace PersonaEditorLib.Text
             {
                 PTPMSGstr MSG = new PTPMSGstr(Index, "");
 
-                List<TextBaseElement> temp = Bytes.GetTextBases().ToList();
+                List<TextBaseElement> temp = (reload ? Bytes.GetReloadTextBases() : Bytes.GetTextBases()).ToList();
 
                 int tempdown = 0;
                 int temptop = temp.Count;
@@ -190,7 +193,9 @@ namespace PersonaEditorLib.Text
         public void CopyOld2New(Encoding Old)
         {
             foreach (var Name in Names)
-                Name.NewName = Name.OldName.GetTextBases().GetString(Old, true);
+                Name.NewName = IsReload
+                    ? Encoding.UTF8.GetString(Name.OldName)
+                    : Name.OldName.GetTextBases().GetString(Old, true);
 
             foreach (var Msg in Msg)
                 foreach (var Str in Msg.Strings)
@@ -342,7 +347,11 @@ namespace PersonaEditorLib.Text
                     else
                     {
                         var name = Names.FirstOrDefault(x => x.Index == a.CharacterIndex);
-                        OldName += name == null ? "<EMPTY>" : name.OldName.GetTextBases().GetString(Old, false).Replace("\n", " ");
+                        OldName += name == null
+                            ? "<EMPTY>"
+                            : (IsReload
+                                ? Encoding.UTF8.GetString(name.OldName)
+                                : name.OldName.GetTextBases().GetString(Old, false)).Replace("\n", " ");
                     }
                     string OldText = removesplit ? b.OldString.GetString(Old, removesplit).Replace("\n", " ") : b.OldString.GetString(Old, removesplit).Replace("\n", "\\n");
 

@@ -138,6 +138,11 @@ namespace PersonaEditorLib.Text
 
         public bool IsLittleEndian { get; set; } = true;
 
+        /// <summary>
+        /// Uses the Persona 3 Reload UTF-8 text and FE-prefixed function dialect.
+        /// </summary>
+        public bool IsReload { get; set; }
+
         #region IGameFile
 
         public FormatEnum Type => FormatEnum.BMD;

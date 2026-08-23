@@ -266,7 +266,7 @@ namespace PersonaEditorCMD
                 string path = Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFile.Name.Replace('/', '+')) + ".PTP");
                 PTP PTP = new PTP(bmd);
                 if (parameters.CopyOld2New)
-                    PTP.CopyOld2New(Static.OldEncoding());
+                    PTP.CopyOld2New(GetOldEncoding(bmd));
                 File.WriteAllBytes(path, PTP.GetData());
             }
         }
@@ -279,8 +279,9 @@ namespace PersonaEditorCMD
                 if (File.Exists(path))
                 {
                     PTP PTP = new PTP(File.ReadAllBytes(path));
-                    var temp = new BMD(PTP, Static.NewEncoding());
+                    var temp = new BMD(PTP, GetNewEncoding(bmd));
                     temp.IsLittleEndian = bmd.IsLittleEndian;
+                    temp.IsReload = bmd.IsReload;
                     objectFile.GameData = temp;
                 }
             }
@@ -312,7 +313,7 @@ namespace PersonaEditorCMD
             }
             else if (objectFile.GameData is BMD bmd)
             {
-                ExportPTPText(new PTP(bmd), objectFileName, value, openedFileDir, parameters);
+                ExportPTPText(new PTP(bmd), objectFileName, value, openedFileDir, parameters, GetOldEncoding(bmd));
             }
             else if (objectFile.GameData is StringList strlst)
             {
@@ -350,12 +351,13 @@ namespace PersonaEditorCMD
             else if (objectFile.GameData is BMD bmd)
             {
                 PTP bmdText = new PTP(bmd);
-                bmdText.CopyOld2New(Static.OldEncoding());
+                bmdText.CopyOld2New(GetOldEncoding(bmd));
 
                 if (ImportPTPText(bmdText, objectFileName, value, openedFileDir, parameters))
                 {
-                    var temp = new BMD(bmdText, Static.NewEncoding());
+                    var temp = new BMD(bmdText, GetNewEncoding(bmd));
                     temp.IsLittleEndian = bmd.IsLittleEndian;
+                    temp.IsReload = bmd.IsReload;
                     objectFile.GameData = temp;
                 }
             }
@@ -371,13 +373,20 @@ namespace PersonaEditorCMD
             }
         }
 
-        static void ExportPTPText(PTP ptp, string objectFileName, string value, string openedFileDir, Parameters parameters)
+        static void ExportPTPText(PTP ptp, string objectFileName, string value, string openedFileDir,
+            Parameters parameters, Encoding oldEncoding = null)
         {
             string path = value == "" ? Path.Combine(openedFileDir, Path.GetFileNameWithoutExtension(objectFileName) + ".TXT") : value;
-            var exp = ptp.ExportTXT(parameters.RemoveSplit, Static.OldEncoding()).Select(x => $"{objectFileName}\t{x}");
+            var exp = ptp.ExportTXT(parameters.RemoveSplit, oldEncoding ?? Static.OldEncoding()).Select(x => $"{objectFileName}\t{x}");
 
             File.AppendAllLines(path, exp);
         }
+
+        static Encoding GetOldEncoding(BMD bmd)
+            => bmd.IsReload ? Encoding.UTF8 : Static.OldEncoding();
+
+        static Encoding GetNewEncoding(BMD bmd)
+            => bmd.IsReload ? Encoding.UTF8 : Static.NewEncoding();
 
         static void ExportATFText(ATF atf, string objectFileName, string value, string openedFileDir, Parameters parameters)
         {

@@ -175,6 +175,61 @@ namespace PersonaEditorLib.Text
                 yield return new TextBaseElement(true, textBytes.ToArray());
         }
 
+        /// <summary>
+        /// Splits Persona 3 Reload message bytes into UTF-8 text and raw control codes.
+        /// Reload prefixes each message function with FE; the low nibble of the next
+        /// byte determines the number of encoded ushort arguments.
+        /// </summary>
+        public static IEnumerable<TextBaseElement> GetReloadTextBases(this byte[] array)
+        {
+            if (array == null)
+                throw new ArgumentNullException(nameof(array));
+
+            int position = 0;
+            while (position < array.Length)
+            {
+                byte value = array[position];
+                if (value == 0 || value == 0x0A)
+                {
+                    yield return new TextBaseElement(false, new[] { value });
+                    position++;
+                    continue;
+                }
+
+                if (value == 0xFE)
+                {
+                    int controlLength = GetReloadControlLength(array, position);
+                    yield return new TextBaseElement(false, array.Skip(position).Take(controlLength).ToArray());
+                    position += controlLength;
+                    continue;
+                }
+
+                int start = position++;
+                while (position < array.Length
+                    && array[position] != 0
+                    && array[position] != 0x0A
+                    && array[position] != 0xFE)
+                {
+                    position++;
+                }
+
+                yield return new TextBaseElement(true, array.Skip(start).Take(position - start).ToArray());
+            }
+        }
+
+        private static int GetReloadControlLength(byte[] array, int position)
+        {
+            if (array.Length - position < 3)
+                return array.Length - position;
+
+            int argumentPairs = (array[position + 1] & 0x0F) - 1;
+            if (argumentPairs < 0)
+                return 1;
+
+            int length = 3 + argumentPairs * 2;
+            return Math.Min(length, array.Length - position);
+        }
+
         public static List<string> SplitBySystem(this string str)
         {
             List<string> returned = new List<string>();

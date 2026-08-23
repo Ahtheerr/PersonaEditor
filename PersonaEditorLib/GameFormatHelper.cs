@@ -25,6 +25,7 @@ namespace PersonaEditorLib
             { ".arc",  FormatEnum.BIN },
             { ".dds2", FormatEnum.BIN },
             { ".gsd",  FormatEnum.BIN },
+            { ".fbin", FormatEnum.FBIN },
 
             { ".bf",  FormatEnum.BF  },
             { ".pm1", FormatEnum.PM1 },
@@ -92,7 +93,9 @@ namespace PersonaEditorLib
                 IGameData Obj;
 
                 if (type == FormatEnum.BIN)
-                    Obj = new FileContainer.BIN(data);
+                    Obj = FileContainer.FBIN.IsFbin(data)
+                        ? new FileContainer.FBIN(data, name)
+                        : new FileContainer.BIN(data);
                 else if (type == FormatEnum.PAC)
                     try
                     {
@@ -132,6 +135,10 @@ namespace PersonaEditorLib
                     Obj = new Text.MBM(data);
                 else if (type == FormatEnum.P5T)
                     Obj = new Text.P5T(data);
+                else if (type == FormatEnum.FBIN)
+                    Obj = new FileContainer.FBIN(data, name);
+                else if (type == FormatEnum.UASSETBMD)
+                    Obj = new FileContainer.UAssetBMD(data, name);
                 else if (type == FormatEnum.BMD)
                     Obj = new Text.BMD(data);
                 else if (type == FormatEnum.ATF)
@@ -252,10 +259,20 @@ namespace PersonaEditorLib
                 ReadOnlySpan<byte> header = data;
                 if (HasMagic(header, 0, 0x46, 0x4E, 0x54, 0x30))
                     return FormatEnum.FNT0;
+                else if (HasMagic(header, 0, 0x46, 0x42, 0x49, 0x4E))
+                    return FormatEnum.FBIN;
                 else if (HasMagic(header, 0, 0x41, 0x54, 0x46, 0x00))
                     return FormatEnum.ATF;
                 else if (HasMagic(header, 4, 0x4D, 0x53, 0x47, 0x32))
                     return FormatEnum.MBM;
+                else if (HasMagic(header, 0, 0x54, 0x42, 0x42, 0x31)
+                    && data.Length >= 0x24)
+                {
+                    int firstSectionOffset = BitConverter.ToInt32(data, 0x10);
+                    if (firstSectionOffset >= 0x20 && firstSectionOffset <= data.Length - 8
+                        && HasMagic(header, firstSectionOffset + 4, 0x4D, 0x53, 0x47, 0x32))
+                        return FormatEnum.MBM;
+                }
 
                 if (HasMagic(header, 8, 0x31, 0x47, 0x53, 0x4D) || HasMagic(header, 8, 0x4D, 0x53, 0x47, 0x31))
                     return FormatEnum.BMD;
@@ -297,6 +314,9 @@ namespace PersonaEditorLib
 
             if (Text.P5T.IsP5T(data))
                 return FormatEnum.P5T;
+
+            if (FileContainer.UAssetBMD.IsUAssetBmd(data))
+                return FormatEnum.UASSETBMD;
 
             return FormatEnum.Unknown;
         }

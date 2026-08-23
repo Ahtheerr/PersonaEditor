@@ -35,6 +35,8 @@
         MBM,
         P5T,
         STEX,
-        StringList
+        StringList,
+        FBIN,
+        UASSETBMD
     }
 }

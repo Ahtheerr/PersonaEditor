@@ -28,12 +28,12 @@ namespace PersonaEditor.ViewModels.Editors
                 a.Update(sourceFont);
         }
 
-        public BMDMsgVM(BMDMSG msg, int sourceFont)
+        public BMDMsgVM(BMDMSG msg, int sourceFont, bool reload = false)
         {
             this.msg = msg;
 
             foreach (var a in msg.MsgStrings)
-                StringList.Add(new BMDMsgStrVM(a, sourceFont));
+                StringList.Add(new BMDMsgStrVM(a, sourceFont, reload));
         }
     }
 }

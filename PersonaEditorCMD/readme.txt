@@ -52,12 +52,12 @@ Common commands
 ---------------
 
 -exptext [TXT]
-  Export text from PTP, BMD/MSG, ATF, MBM/MSG2, Persona 5 Tactica (.dat/.bytes), and supported
+  Export text from PTP, BMD/MSG, ATF, MBM/MSG2/TBB1, Persona 5 Tactica (.dat/.bytes), and supported
   string-list files. If TXT is
   omitted, a TXT is created next to the source file.
 
 -imptext [TXT]
-  Import text into PTP, BMD/MSG, ATF, MBM/MSG2, Persona 5 Tactica (.dat/.bytes), and supported
+  Import text into PTP, BMD/MSG, ATF, MBM/MSG2/TBB1, Persona 5 Tactica (.dat/.bytes), and supported
   string-list files. Usually
   followed by `-save`.
 
@@ -179,13 +179,14 @@ Supported formats
 The tool opens many formats through PersonaEditorLib, including:
 
 Containers:
-  BIN, PAC, SPR, SPR3, SPR6, BF, PM1, BVP, TBL, TPC, LB
+  BIN, FBIN, UASSET BMD, PAC, SPR, SPR3, SPR6, BF, PM1, BVP, TBL, TPC, LB
 
 Images and textures:
   TMX, DDS, CTPK, G1T, STEX, CMP/DMPBM/STEX, HIP
 
 Text and fonts:
-  BMD/MSG, MBM/MSG2, Persona 5 Tactica (.dat/.bytes), PTP, ATF, FNT, FNT0, ABC sidecars for HIP fonts
+  BMD/MSG, UASSET-wrapped Reload BMD (automatic UTF-8), MBM/MSG2/TBB1,
+  Persona 5 Tactica (.dat/.bytes), PTP, ATF, FNT, FNT0, ABC sidecars for HIP fonts
 
 Unknown or raw files may appear as DAT/HEX when exported from containers.
 

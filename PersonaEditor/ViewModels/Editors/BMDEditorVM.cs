@@ -139,9 +139,9 @@ namespace PersonaEditor.ViewModels.Editors
 
 
                 foreach (var a in bmd.Name)
-                    NameList.Add(new BMDNameVM(a, sourceFont));
+                    NameList.Add(new BMDNameVM(a, sourceFont, bmd.IsReload));
                 foreach (var a in bmd.Msg)
-                    MsgList.Add(new BMDMsgVM(a, sourceFont));
+                    MsgList.Add(new BMDMsgVM(a, sourceFont, bmd.IsReload));
 
                 Name = objbmd.Name;
             }

@@ -13,6 +13,7 @@ namespace PersonaEditorLib.Text
         private const int HeaderSize = 0x20;
         private const int RowSize = 0x10;
         private const uint Version = 0x00010000;
+        private const string BundleMagic = "TBB1";
         private const string RawNoAutoPrefix = "[RN]";
         private const string LineBreakToken = "{F801}";
 
@@ -22,10 +23,44 @@ namespace PersonaEditorLib.Text
             { 0x01, 0 },
             { 0x02, 0 },
             { 0x04, 1 },
+            { 0x05, 1 },
             { 0x11, 1 },
             { 0x12, 0 },
             { 0x13, 4 },
+            { 0x14, 2 },
             { 0x43, 1 },
+            { 0x44, 0 },
+            { 0x45, 1 },
+            { 0x47, 1 },
+            { 0x4A, 1 },
+            { 0x4B, 1 },
+            { 0x4C, 1 },
+            { 0x4D, 1 },
+            { 0x50, 1 },
+            { 0x51, 1 },
+            { 0x52, 1 },
+            { 0x53, 1 },
+            { 0x54, 1 },
+            { 0x55, 1 },
+            { 0x56, 1 },
+            { 0x57, 1 },
+            { 0x58, 1 },
+            { 0x59, 1 },
+            { 0x5A, 1 },
+            { 0x5B, 1 },
+            { 0x5C, 0 },
+            { 0x5D, 0 },
+            { 0x5E, 1 },
+            { 0x5F, 1 },
+            { 0x60, 0 },
+            { 0x61, 0 },
+            { 0x63, 0 },
+            { 0x64, 1 },
+            { 0x6A, 0 },
+            { 0x6B, 0 },
+            { 0x6C, 0 },
+            { 0x6D, 0 },
+            { 0x70, 1 },
             { 0x71, 1 },
             { 0x72, 1 },
             { 0x73, 1 },
@@ -39,7 +74,9 @@ namespace PersonaEditorLib.Text
 
         private readonly byte[] originalData;
         private readonly List<MBMEntry> entries = new List<MBMEntry>();
-        private int slotCount;
+        private readonly List<MBMSection> sections = new List<MBMSection>();
+        private bool isBundle;
+        private int bundleAlignment;
 
         public MBM(byte[] data)
         {
@@ -57,36 +94,65 @@ namespace PersonaEditorLib.Text
             if (entries.All(x => !x.HasChanges))
                 return originalData.ToArray();
 
-            byte[][] records = entries.Select(x => x.GetData()).ToArray();
-            int textBlobSize = records.Sum(x => x.Length);
-            int textStart = HeaderSize + slotCount * RowSize;
-            int usedSize = HeaderSize + entries.Count * RowSize + textBlobSize;
+            byte[][] sectionData = sections
+                .Select(section => BuildSection(section, isBundle ? bundleAlignment : 1))
+                .ToArray();
 
-            using MemoryStream ms = new MemoryStream(textStart + textBlobSize);
+            if (!isBundle)
+                return sectionData[0];
+
+            int headerSize = Align(0x10 + sectionData.Length * sizeof(int), bundleAlignment);
+            int totalSize = checked(headerSize + sectionData.Sum(x => x.Length));
+            using MemoryStream ms = new MemoryStream(totalSize);
             using BinaryWriter writer = new BinaryWriter(ms, Encoding.ASCII, true);
+            writer.Write(Encoding.ASCII.GetBytes(BundleMagic));
+            writer.Write(bundleAlignment);
+            writer.Write(sectionData.Length);
+            writer.Write(totalSize);
 
+            int sectionOffset = headerSize;
+            foreach (byte[] data in sectionData)
+            {
+                writer.Write(sectionOffset);
+                sectionOffset += data.Length;
+            }
+
+            writer.Write(new byte[headerSize - checked((int)ms.Position)]);
+            foreach (byte[] data in sectionData)
+                writer.Write(data);
+
+            return ms.ToArray();
+        }
+
+        private static byte[] BuildSection(MBMSection section, int alignment)
+        {
+            byte[][] records = section.Entries.Select(x => x.GetData()).ToArray();
+            int textStart = checked(HeaderSize + section.SlotCount * RowSize);
+            int unalignedSize = checked(textStart + records.Sum(x => x.Length));
+            int sectionSize = Align(unalignedSize, alignment);
+            int declaredCount = section.CountIsSlotCount ? section.SlotCount : section.Entries.Count;
+            int usedSize = section.CountIsSlotCount
+                ? sectionSize
+                : checked(HeaderSize + declaredCount * RowSize + records.Sum(x => x.Length));
+
+            using MemoryStream ms = new MemoryStream(sectionSize);
+            using BinaryWriter writer = new BinaryWriter(ms, Encoding.ASCII, true);
             writer.Write(0);
             writer.Write(Encoding.ASCII.GetBytes("MSG2"));
             writer.Write(Version);
             writer.Write(usedSize);
-            writer.Write(entries.Count);
+            writer.Write(declaredCount);
             writer.Write(HeaderSize);
             writer.Write(0L);
-
-            for (int i = 0; i < slotCount; i++)
-                writer.Write(new byte[RowSize]);
+            writer.Write(new byte[section.SlotCount * RowSize]);
 
             int textOffset = textStart;
-            Dictionary<int, MBMEntry> byId = entries.ToDictionary(x => x.Id);
-            Dictionary<int, byte[]> recordById = entries.Zip(records, (entry, record) => new { entry.Id, record }).ToDictionary(x => x.Id, x => x.record);
-            for (int slot = 0; slot < slotCount; slot++)
+            for (int i = 0; i < section.Entries.Count; i++)
             {
-                if (!byId.TryGetValue(slot, out MBMEntry entry))
-                    continue;
-
-                byte[] record = recordById[slot];
-                ms.Position = HeaderSize + slot * RowSize;
-                writer.Write(entry.Id);
+                MBMEntry entry = section.Entries[i];
+                byte[] record = records[i];
+                ms.Position = HeaderSize + entry.RecordId * RowSize;
+                writer.Write(entry.RecordId);
                 writer.Write(record.Length);
                 writer.Write(textOffset);
                 writer.Write(entry.Unknown);
@@ -96,7 +162,16 @@ namespace PersonaEditorLib.Text
                 textOffset += record.Length;
             }
 
+            ms.SetLength(sectionSize);
             return ms.ToArray();
+        }
+
+        private static int Align(int value, int alignment)
+        {
+            if (alignment <= 1)
+                return value;
+
+            return checked((value + alignment - 1) & ~(alignment - 1));
         }
 
         public string[] ExportText(string fileName, bool removeSplit)
@@ -143,6 +218,59 @@ namespace PersonaEditorLib.Text
 
         private void Read(byte[] data)
         {
+            entries.Clear();
+            sections.Clear();
+
+            if (HasMagic(data, 0, BundleMagic))
+            {
+                ReadBundle(data);
+                return;
+            }
+
+            isBundle = false;
+            sections.Add(ReadSection(data, 0, RecordFormat.Legacy, false));
+        }
+
+        private void ReadBundle(byte[] data)
+        {
+            if (data.Length < 0x20)
+                throw new Exception("MBM: TBB1 bundle is too small");
+
+            bundleAlignment = checked((int)ReadUInt32(data, 0x04));
+            int sectionCount = checked((int)ReadUInt32(data, 0x08));
+            int totalSize = checked((int)ReadUInt32(data, 0x0C));
+            if (bundleAlignment <= 0 || (bundleAlignment & (bundleAlignment - 1)) != 0)
+                throw new Exception("MBM: invalid TBB1 alignment");
+            if (sectionCount <= 0 || 0x10L + sectionCount * sizeof(int) > data.Length)
+                throw new Exception("MBM: invalid TBB1 section count");
+            if (totalSize != data.Length)
+                throw new Exception("MBM: TBB1 size does not match the file length");
+
+            int minimumOffset = Align(0x10 + sectionCount * sizeof(int), bundleAlignment);
+            int[] offsets = new int[sectionCount];
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                offsets[i] = checked((int)ReadUInt32(data, 0x10 + i * sizeof(int)));
+                if (offsets[i] < minimumOffset || offsets[i] >= data.Length || offsets[i] % bundleAlignment != 0)
+                    throw new Exception("MBM: invalid TBB1 section offset");
+                if (i > 0 && offsets[i] <= offsets[i - 1])
+                    throw new Exception("MBM: TBB1 section offsets are not ascending");
+            }
+
+            isBundle = true;
+            int virtualIdBase = 0;
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                int end = i + 1 < offsets.Length ? offsets[i + 1] : data.Length;
+                byte[] sectionData = data.AsSpan(offsets[i], end - offsets[i]).ToArray();
+                MBMSection section = ReadSection(sectionData, virtualIdBase, RecordFormat.NullTerminated, true);
+                sections.Add(section);
+                virtualIdBase = checked(virtualIdBase + section.SlotCount);
+            }
+        }
+
+        private MBMSection ReadSection(byte[] data, int virtualIdBase, RecordFormat recordFormat, bool countIsSlotCount)
+        {
             if (data.Length < HeaderSize)
                 throw new Exception("MBM: file too small");
             if (ReadUInt32(data, 0x00) != 0)
@@ -159,18 +287,32 @@ namespace PersonaEditorLib.Text
                 throw new Exception("MBM: unsupported table offset");
             if (ReadUInt32(data, 0x18) != 0 || ReadUInt32(data, 0x1C) != 0)
                 throw new Exception("MBM: expected zero header padding");
+            if (usedSize > data.Length)
+                throw new Exception("MBM: used size exceeds the section length");
 
-            int textBlobSize = usedSize - HeaderSize - entryCount * RowSize;
-            if (textBlobSize < 0)
-                throw new Exception("MBM: invalid used size");
+            int slotCount;
+            int textStart;
+            if (countIsSlotCount)
+            {
+                slotCount = entryCount;
+                textStart = checked(tableOffset + slotCount * RowSize);
+                if (textStart > usedSize)
+                    throw new Exception("MBM: table exceeds the section length");
+            }
+            else
+            {
+                int textBlobSize = usedSize - HeaderSize - entryCount * RowSize;
+                if (textBlobSize < 0)
+                    throw new Exception("MBM: invalid used size");
 
-            int textStart = data.Length - textBlobSize;
-            int tableSize = textStart - tableOffset;
-            if (tableSize < 0 || tableSize % RowSize != 0)
-                throw new Exception("MBM: invalid sparse table size");
+                textStart = data.Length - textBlobSize;
+                int tableSize = textStart - tableOffset;
+                if (tableSize < 0 || tableSize % RowSize != 0)
+                    throw new Exception("MBM: invalid sparse table size");
+                slotCount = tableSize / RowSize;
+            }
 
-            slotCount = tableSize / RowSize;
-            entries.Clear();
+            var sectionEntries = new List<MBMEntry>();
 
             for (int slot = 0; slot < slotCount; slot++)
             {
@@ -188,30 +330,37 @@ namespace PersonaEditorLib.Text
                     throw new Exception("MBM: entry points outside the text blob");
 
                 byte[] record = data.Skip(textOffset).Take(byteLength).ToArray();
-                entries.Add(new MBMEntry(id, byteLength, textOffset, unknown, record, DecodeRecord(record)));
+                var entry = new MBMEntry(checked(virtualIdBase + id), id, byteLength, textOffset,
+                    unknown, record, DecodeRecord(record, recordFormat), recordFormat);
+                sectionEntries.Add(entry);
+                entries.Add(entry);
             }
 
-            if (entries.Count != entryCount)
+            if (!countIsSlotCount && sectionEntries.Count != entryCount)
                 throw new Exception("MBM: active entry count mismatch");
+
+            return new MBMSection(slotCount, countIsSlotCount, sectionEntries);
         }
 
-        private static string DecodeRecord(byte[] record)
+        private static string DecodeRecord(byte[] record, RecordFormat recordFormat)
         {
-            if (record.Length < 2 || record[^2] != 0xFF || record[^1] != 0xFF)
-                throw new Exception("MBM: message record does not end with FF FF");
+            if (record.Length < 2 || !IsTerminator(record, record.Length - 2, recordFormat))
+                throw new Exception(recordFormat == RecordFormat.Legacy
+                    ? "MBM: message record does not end with FF FF"
+                    : "MBM: message record does not end with 00 00");
 
             StringBuilder output = new StringBuilder();
             int position = 0;
             while (position < record.Length)
             {
-                if (IsTerminator(record, position))
+                if (IsTerminator(record, position, recordFormat))
                 {
                     if (position != record.Length - 2)
                         throw new Exception("MBM: record terminator appears before the end");
                     break;
                 }
 
-                if (IsInlineNull(record, position))
+                if (recordFormat == RecordFormat.Legacy && IsInlineNull(record, position))
                 {
                     output.Append("\\0");
                     position += 2;
@@ -220,14 +369,14 @@ namespace PersonaEditorLib.Text
 
                 if (record[position] == 0xF8)
                 {
-                    DecodeControl(record, ref position, output);
+                    DecodeControl(record, ref position, output, recordFormat);
                     continue;
                 }
 
                 int start = position;
                 while (position < record.Length
-                    && !IsTerminator(record, position)
-                    && !IsInlineNull(record, position)
+                    && !IsTerminator(record, position, recordFormat)
+                    && !(recordFormat == RecordFormat.Legacy && IsInlineNull(record, position))
                     && record[position] != 0xF8)
                 {
                     byte value = record[position];
@@ -246,7 +395,7 @@ namespace PersonaEditorLib.Text
             return output.ToString();
         }
 
-        private static void DecodeControl(byte[] record, ref int position, StringBuilder output)
+        private static void DecodeControl(byte[] record, ref int position, StringBuilder output, RecordFormat recordFormat)
         {
             if (position + 2 > record.Length)
                 throw new Exception("MBM: truncated control opcode");
@@ -256,6 +405,31 @@ namespace PersonaEditorLib.Text
 
             if (opcode == 0x1B)
             {
+                if (recordFormat == RecordFormat.NullTerminated)
+                {
+                    int identifierEnd = Array.IndexOf(record, (byte)0, position);
+                    if (identifierEnd < position)
+                        throw new Exception("MBM: invalid null-terminated F81B identifier");
+
+                    ReadOnlySpan<byte> identifierBytes = record.AsSpan(position, identifierEnd - position);
+                    bool invalidIdentifier = identifierBytes.Length == 0;
+                    for (int i = 0; i < identifierBytes.Length && !invalidIdentifier; i++)
+                        invalidIdentifier = identifierBytes[i] < 0x20 || identifierBytes[i] >= 0x7F;
+                    if (invalidIdentifier)
+                        throw new Exception("MBM: invalid F81B identifier");
+
+                    int zeroCount = 2 + (identifierBytes.Length & 1);
+                    if (identifierEnd + zeroCount > record.Length)
+                        throw new Exception("MBM: truncated F81B trailer");
+                    for (int i = 0; i < zeroCount; i++)
+                        if (record[identifierEnd + i] != 0)
+                            throw new Exception("MBM: invalid F81B trailer");
+
+                    output.Append($"{{F81B,{Encoding.ASCII.GetString(identifierBytes)}}}");
+                    position = identifierEnd + zeroCount;
+                    return;
+                }
+
                 if (position + 12 > record.Length)
                     throw new Exception("MBM: truncated F81B payload");
 
@@ -289,7 +463,7 @@ namespace PersonaEditorLib.Text
                 : $"{{F8{opcode:X2},{string.Join(",", args)}}}");
         }
 
-        private static byte[] EncodeRecord(string text)
+        private static byte[] EncodeRecord(string text, RecordFormat recordFormat)
         {
             text ??= string.Empty;
 
@@ -325,7 +499,7 @@ namespace PersonaEditorLib.Text
                 {
                     int end = text.IndexOf('}', i + 1);
                     using MemoryStream tokenStream = new MemoryStream();
-                    if (end > i && TryEncodeToken(text.Substring(i + 1, end - i - 1), tokenStream))
+                    if (end > i && TryEncodeToken(text.Substring(i + 1, end - i - 1), tokenStream, recordFormat))
                     {
                         tokenStream.WriteTo(ms);
                         i = end + 1;
@@ -354,8 +528,9 @@ namespace PersonaEditorLib.Text
                 WritePlainText(ms, text.Substring(start, i - start));
             }
 
-            ms.WriteByte(0xFF);
-            ms.WriteByte(0xFF);
+            byte terminator = recordFormat == RecordFormat.Legacy ? (byte)0xFF : (byte)0;
+            ms.WriteByte(terminator);
+            ms.WriteByte(terminator);
             return ms.ToArray();
         }
 
@@ -384,7 +559,7 @@ namespace PersonaEditorLib.Text
             return builder.ToString();
         }
 
-        private static bool TryEncodeToken(string token, Stream output)
+        private static bool TryEncodeToken(string token, Stream output, RecordFormat recordFormat)
         {
             token = token.Trim();
             string[] parts = token.Split(',').Select(x => x.Trim()).ToArray();
@@ -395,7 +570,9 @@ namespace PersonaEditorLib.Text
                 output.WriteByte(opcode);
 
                 if (opcode == 0x1B)
-                    return TryWriteF81B(parts, output);
+                    return recordFormat == RecordFormat.Legacy
+                        ? TryWriteF81B(parts, output)
+                        : TryWriteNullTerminatedF81B(parts, output);
 
                 if (!ControlU16Counts.TryGetValue(opcode, out int count) || count != parts.Length - 1)
                     return false;
@@ -419,6 +596,24 @@ namespace PersonaEditorLib.Text
             }
 
             return parts.Length == 1 && TryWriteRawHex(parts[0], output);
+        }
+
+        private static bool TryWriteNullTerminatedF81B(string[] parts, Stream output)
+        {
+            if (parts.Length != 2)
+                return false;
+
+            string identifier = parts[1];
+            if (identifier.Length == 0 || identifier.Any(x => x < 0x20 || x >= 0x7F))
+                return false;
+
+            byte[] identifierBytes = Encoding.ASCII.GetBytes(identifier);
+            output.Write(identifierBytes, 0, identifierBytes.Length);
+            output.WriteByte(0);
+            output.WriteByte(0);
+            if ((identifierBytes.Length & 1) != 0)
+                output.WriteByte(0);
+            return true;
         }
 
         private static bool TryWriteF81B(string[] parts, Stream output)
@@ -580,8 +775,11 @@ namespace PersonaEditorLib.Text
         private static bool HasMagic(byte[] data, int offset, string magic)
             => data.Length >= offset + magic.Length && Encoding.ASCII.GetString(data, offset, magic.Length) == magic;
 
-        private static bool IsTerminator(byte[] data, int offset)
-            => offset + 1 < data.Length && data[offset] == 0xFF && data[offset + 1] == 0xFF;
+        private static bool IsTerminator(byte[] data, int offset, RecordFormat recordFormat)
+        {
+            byte value = recordFormat == RecordFormat.Legacy ? (byte)0xFF : (byte)0;
+            return offset + 1 < data.Length && data[offset] == value && data[offset + 1] == value;
+        }
 
         private static bool IsInlineNull(byte[] data, int offset)
             => offset + 1 < data.Length && data[offset] == 0 && data[offset + 1] == 0;
@@ -603,12 +801,34 @@ namespace PersonaEditorLib.Text
             stream.Write(buffer);
         }
 
+        internal enum RecordFormat
+        {
+            Legacy,
+            NullTerminated
+        }
+
+        private sealed class MBMSection
+        {
+            public int SlotCount { get; }
+            public bool CountIsSlotCount { get; }
+            public IReadOnlyList<MBMEntry> Entries { get; }
+
+            public MBMSection(int slotCount, bool countIsSlotCount, IReadOnlyList<MBMEntry> entries)
+            {
+                SlotCount = slotCount;
+                CountIsSlotCount = countIsSlotCount;
+                Entries = entries;
+            }
+        }
+
         public class MBMEntry
         {
             private readonly byte[] raw;
             private readonly byte[] rawNamePrefix;
+            private readonly RecordFormat recordFormat;
 
             public int Id { get; }
+            internal int RecordId { get; }
             public int ByteLength { get; }
             public int Offset { get; }
             public int Unknown { get; }
@@ -624,12 +844,20 @@ namespace PersonaEditorLib.Text
                 || Strings.Any(x => x.HasChanges);
 
             public MBMEntry(int id, int byteLength, int offset, int unknown, byte[] raw, string decodedText)
+                : this(id, id, byteLength, offset, unknown, raw, decodedText, RecordFormat.Legacy)
+            {
+            }
+
+            internal MBMEntry(int id, int recordId, int byteLength, int offset, int unknown,
+                byte[] raw, string decodedText, RecordFormat recordFormat)
             {
                 Id = id;
+                RecordId = recordId;
                 ByteLength = byteLength;
                 Offset = offset;
                 Unknown = unknown;
                 this.raw = raw?.ToArray() ?? throw new ArgumentNullException(nameof(raw));
+                this.recordFormat = recordFormat;
                 rawNamePrefix = GetRawNamePrefix(raw);
                 SplitNamePrefix(decodedText ?? string.Empty, out string name, out string body);
                 Name = name;
@@ -643,15 +871,15 @@ namespace PersonaEditorLib.Text
                     return raw.ToArray();
 
                 byte[] namePrefix = NewName != null && NewName != Name
-                    ? EncodeNamePrefix(NewName)
+                    ? EncodeNamePrefix(NewName, recordFormat)
                     : rawNamePrefix;
 
                 if (!string.IsNullOrEmpty(NewText) && NewText != OldText)
                 {
                     if (rawNamePrefix == null || NewText.StartsWith("{F812}", StringComparison.OrdinalIgnoreCase))
-                        return EncodeRecord(NewText);
+                        return EncodeRecord(NewText, recordFormat);
 
-                    byte[] overrideBody = EncodeRecord(NewText);
+                    byte[] overrideBody = EncodeRecord(NewText, recordFormat);
                     return CombineNamePrefix(namePrefix, overrideBody);
                 }
 
@@ -661,9 +889,9 @@ namespace PersonaEditorLib.Text
                 string replacementName = NewName != null && NewName != Name ? NewName : null;
                 string rebuiltText = string.Concat(Strings.Select(x => x.GetText(Name, replacementName)));
                 if (rawNamePrefix == null)
-                    return EncodeRecord(rebuiltText);
+                    return EncodeRecord(rebuiltText, recordFormat);
 
-                byte[] rebuiltBody = EncodeRecord(rebuiltText);
+                byte[] rebuiltBody = EncodeRecord(rebuiltText, recordFormat);
                 return CombineNamePrefix(namePrefix, rebuiltBody);
             }
 
@@ -826,9 +1054,9 @@ namespace PersonaEditorLib.Text
                 return null;
             }
 
-            private static byte[] EncodeNamePrefix(string name)
+            private static byte[] EncodeNamePrefix(string name, RecordFormat recordFormat)
             {
-                byte[] record = EncodeRecord("{F812}" + (name ?? string.Empty) + "\\0");
+                byte[] record = EncodeRecord("{F812}" + (name ?? string.Empty) + "\\0", recordFormat);
                 return record.Take(record.Length - 2).ToArray();
             }
 

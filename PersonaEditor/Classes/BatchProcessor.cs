@@ -137,7 +137,7 @@ namespace PersonaEditor.Classes
             if (gameFile.GameData is PTP ptp)
                 return ptp.ExportTXT(settings.RemoveSplit, settings.OldEncoding).Select(x => $"{fileName}\t{x}");
             if (gameFile.GameData is BMD bmd)
-                return new PTP(bmd).ExportTXT(settings.RemoveSplit, settings.OldEncoding).Select(x => $"{fileName}\t{x}");
+                return new PTP(bmd).ExportTXT(settings.RemoveSplit, GetOldEncoding(bmd, settings)).Select(x => $"{fileName}\t{x}");
             if (gameFile.GameData is CatherineBMD catherineBmd)
                 return catherineBmd.ExportText(fileName, settings.RemoveSplit);
             if (gameFile.GameData is MBM mbm)
@@ -169,12 +169,13 @@ namespace PersonaEditor.Classes
             if (gameFile.GameData is BMD bmd)
             {
                 var bmdText = new PTP(bmd);
-                bmdText.CopyOld2New(settings.OldEncoding);
+                bmdText.CopyOld2New(GetOldEncoding(bmd, settings));
                 if (!ImportPTPText(bmdText, fileName, rows, settings))
                     return false;
 
-                var temp = new BMD(bmdText, settings.NewEncoding);
+                var temp = new BMD(bmdText, GetNewEncoding(bmd, settings));
                 temp.IsLittleEndian = bmd.IsLittleEndian;
+                temp.IsReload = bmd.IsReload;
                 gameFile.GameData = temp;
                 return true;
             }
@@ -189,6 +190,12 @@ namespace PersonaEditor.Classes
 
             return false;
         }
+
+        private static Encoding GetOldEncoding(BMD bmd, TextSettings settings)
+            => bmd.IsReload ? Encoding.UTF8 : settings.OldEncoding;
+
+        private static Encoding GetNewEncoding(BMD bmd, TextSettings settings)
+            => bmd.IsReload ? Encoding.UTF8 : settings.NewEncoding;
 
         private static bool ImportPTPText(PTP ptp, string fileName, List<string[]> rows, TextSettings settings)
         {

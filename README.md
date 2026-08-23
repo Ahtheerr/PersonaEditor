@@ -17,8 +17,14 @@
 
 ### Persona Q/Q2
 
+* Containers: FBIN (.bin), including nested T2B1/FLW0 event scripts and TBB1 message bundles;
 * Graphic containers: SPR3; TPC;
 * Graphics: CTPK;
+* Text: MSG2/TBB1 inside FBIN;
+
+### Unreal Engine titles
+
+* Text: BmdAssetPlugin UASSET files containing Atlus BMD data, with automatic Persona 3 Reload UTF-8 and control-code handling;
 
 ### Persona 3/4/5 Dancing
 
@@ -43,7 +49,7 @@
 
 ### Shin Megami Tensei IV: Apocalypse
 
-* Text: MSG2 (.mbm);
+* Text: MSG2 and TBB1-bundled MSG2 (.mbm);
 
 ### Digital Devil Saga
 
