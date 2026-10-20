@@ -11,7 +11,6 @@ namespace PersonaEditor.Classes
             FormatEnum.CatherineBMD,
             FormatEnum.MBM,
             FormatEnum.P5T,
-            FormatEnum.EVE,
             FormatEnum.PTP,
             FormatEnum.SPD,
             FormatEnum.SPR,

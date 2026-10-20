@@ -147,8 +147,6 @@ namespace PersonaEditor.Classes
                 return p5t.ExportText(fileName, settings.RemoveSplit);
             if (gameFile.GameData is ATF atf)
                 return atf.ExportText(fileName, settings.RemoveSplit);
-            if (gameFile.GameData is EVE eve)
-                return eve.ExportText(fileName, settings.RemoveSplit);
             if (gameFile.GameData is StringList list)
                 return list.ExportText();
 
@@ -169,8 +167,6 @@ namespace PersonaEditor.Classes
                 return ImportMBMText(mbm, fileName, rows, settings);
             if (gameFile.GameData is P5T p5t)
                 return ImportP5TText(p5t, fileName, rows, settings);
-            if (gameFile.GameData is EVE eve)
-                return ImportEVEText(eve, fileName, rows, settings.RemoveSplit);
             if (gameFile.GameData is BMD bmd)
             {
                 var bmdText = new PTP(bmd);
@@ -302,46 +298,6 @@ namespace PersonaEditor.Classes
                 return false;
 
             p5t.ImportText(imported);
-            return true;
-        }
-
-        private static bool ImportEVEText(EVE eve, string fileName, List<string[]> rows, bool removeSplit)
-        {
-            var importedRows = new List<(int Index, string Speaker, string Text)>();
-            var legacyImported = new List<(int Index, string Text)>();
-            foreach (string[] row in rows)
-            {
-                if (row.Length < 3 || !IsMatchingFileName(row[0], fileName)
-                    || !int.TryParse(row[1], out int index))
-                    continue;
-
-                if (row.Length >= 4
-                    && (row[2].Equals("Text", StringComparison.OrdinalIgnoreCase)
-                        || row[2].Equals("Speaker", StringComparison.OrdinalIgnoreCase)))
-                {
-                    if (row[3] != "")
-                        legacyImported.Add((index, row[3]));
-                }
-                else if (row.Length >= 4)
-                {
-                    string text = row.Length >= 5 && row[4] != "" ? row[4] : row[3];
-                    if (row.Length >= 5 && row[4] != ""
-                        && !eve.MatchesExportedText(index, row[3], removeSplit))
-                        throw new InvalidDataException(
-                            $"EVE text source mismatch for '{fileName}', entry {index}. " +
-                            "Re-export the original EVENT.BIN with this version before importing translations.");
-                    if (row[2] != "" || text != "")
-                        importedRows.Add((index, row[2], text));
-                }
-                else if (row[2] != "")
-                    legacyImported.Add((index, row[2]));
-            }
-
-            if (importedRows.Count == 0 && legacyImported.Count == 0)
-                return false;
-
-            eve.ImportTextRows(importedRows);
-            eve.ImportText(legacyImported);
             return true;
         }
 
