@@ -36,7 +36,7 @@
 
                 <GridSplitter Grid.Row="1" Height="6" Background="#FFbfbfbf"  VerticalAlignment="Center" HorizontalAlignment="Stretch"/>
                 <DataGrid DataContext="{Binding Path=TextureList/}" Grid.Row="2" ItemsSource="{Binding Path=KeyList}" AutoGenerateColumns="False"
-                          Background="#FFF0F0F0" SelectionMode="Single" SelectedItem="{Binding SelectedItem, Mode=OneWayToSource}" VerticalScrollBarVisibility="Visible">
+                          Background="#FFF0F0F0" SelectionMode="Single" SelectedItem="{Binding SelectedItem, Mode=TwoWay}" VerticalScrollBarVisibility="Visible">
                     <DataGrid.Columns>
                         <DataGridTextColumn IsReadOnly="True" Header="Name" Binding="{Binding Name}"/>
                         <DataGridTextColumn Header="Tex ID" Binding="{Binding TextureID}"/>
@@ -89,10 +89,72 @@
                         <Button Content="PNG" Padding="6,0" Margin="2,0,10,0" Click="ResetBackground_Click"/>
                         <TextBlock Text="Border" Margin="4,0,2,0"/>
                         <controls:NumericIncDec x:Name="NUM" Min="0" Max="5" Width="40" Value="{Binding Source={x:Static settings:SPREditor.Default}, Path=BorderThickness, Mode=TwoWay}"/>
+                        <CheckBox x:Name="ShowGamePreview" Content="In-game preview" Margin="10,0,4,0"
+                                  ToolTip="Show the selected sprite at twice its X/Y Scl dimensions."/>
                     </StatusBar>
                 </Grid>
 
-                <ScrollViewer x:Name="SpriteViewer" Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                <DockPanel Grid.Row="1">
+                    <GroupBox Header="In-game preview" DockPanel.Dock="Bottom" Height="320"
+                              DataContext="{Binding Path=TextureList/}">
+                        <GroupBox.Style>
+                            <Style TargetType="GroupBox">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsChecked, ElementName=ShowGamePreview}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </GroupBox.Style>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <Grid Margin="8,4" DataContext="{Binding SelectedItem}"
+                                  ToolTip="100% = half the sprite dimension in Scl. Values are rounded to whole numbers.">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition/>
+                                    <ColumnDefinition Width="70"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="X Scl" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <Slider Grid.Column="1" Minimum="0" Maximum="200" TickFrequency="50" TickPlacement="BottomRight"
+                                        IsEnabled="{Binding CanEditXScale, FallbackValue=False}"
+                                        Value="{Binding XScalePercent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                <TextBlock Grid.Column="2" Text="{Binding XScalePercent, StringFormat={}{0:0.##}%}" TextAlignment="Right" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Row="1" Text="Y Scl" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="200" TickFrequency="50" TickPlacement="BottomRight"
+                                        IsEnabled="{Binding CanEditYScale, FallbackValue=False}"
+                                        Value="{Binding YScalePercent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding YScalePercent, StringFormat={}{0:0.##}%}" TextAlignment="Right" VerticalAlignment="Center"/>
+                            </Grid>
+                            <TextBlock Grid.Row="1" Text="Select a sprite to preview." HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedItem}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                <Image Source="{Binding SelectedSpriteImage}" Stretch="Fill" Margin="8"
+                                       Width="{Binding SelectedItem.PreviewWidth, FallbackValue=0}"
+                                       Height="{Binding SelectedItem.PreviewHeight, FallbackValue=0}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </ScrollViewer>
+                        </Grid>
+                    </GroupBox>
+                <ScrollViewer x:Name="SpriteViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                               PreviewMouseWheel="SpriteViewer_PreviewMouseWheel"
                               PreviewMouseDown="SpriteViewer_PreviewMouseDown"
                               PreviewMouseMove="SpriteViewer_PreviewMouseMove"
@@ -209,6 +271,7 @@
                         </Border>
                     </Grid>
                 </ScrollViewer>
+                </DockPanel>
             </Grid>
         </Grid>
     </Grid>

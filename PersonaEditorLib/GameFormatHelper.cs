@@ -103,7 +103,9 @@ namespace PersonaEditorLib
                 else if (type == FormatEnum.PAC)
                     try
                     {
-                        Obj = new FileContainer.PAC(data);
+                        Obj = FileContainer.BIN.IsOldArchive(data)
+                            ? new FileContainer.BIN(data)
+                            : new FileContainer.PAC(data);
                     }
                     catch
                     {

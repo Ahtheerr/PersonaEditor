@@ -17,9 +17,14 @@ namespace PersonaEditorLib.FileContainer
         private static readonly byte[] TextboxSeparator = { 0xFF, 0x03, 0xFF, 0x02 };
         private static readonly byte[] SpeakerPrefix = { 0xFF, 0x19, 0xC7, 0xB7 };
         private static readonly byte[] SpeakerDelimiter = { 0xC7, 0xB8, 0xFF, 0x16 };
+        private const string UppercaseAccents = "ÀÁÃÂÇÉÊÍÓÕÔÚ";
+        private const string LowercaseAccents = "àáãâçéêíóõôú";
+        private const byte AccentPrefix = 0xE6;
+        private const byte UppercaseAccentStart = 0xA0;
+        private const byte LowercaseAccentStart = 0xAC;
         private readonly ushort[] pointers;
+        private readonly bool hasPointerPadding;
         private readonly byte[] originalData;
-        private readonly int logicalTextEnd;
         private readonly List<EVEChunk> chunks = new List<EVEChunk>();
         private int nextStringIndex;
 
@@ -37,76 +42,41 @@ namespace PersonaEditorLib.FileContainer
 
         public EVE(byte[] data)
         {
-            if (!TryReadHeader(data, 0, out ushort formatVersion, out ushort codeTableEnd,
-                out ushort stringTableStart, out ushort textStart))
-                throw new InvalidDataException("EVE: invalid event header.");
-            if ((textStart - stringTableStart) % 2 != 0)
-                throw new InvalidDataException("EVE: string table has an odd size.");
+            if (!TryParseLayout(data, 0, out ushort formatVersion, out ushort codeTableEnd,
+                out ushort stringTableStart, out ushort textStart, out ushort[] parsedPointers,
+                out bool pointerPadding, out int rawSize, out string error))
+                throw new InvalidDataException($"EVE: {error}");
 
-            Data = data;
-            originalData = (byte[])data.Clone();
+            Data = CopyBytes(data, 0, rawSize);
+            originalData = (byte[])Data.Clone();
             FormatVersion = formatVersion;
             CodeTableEnd = codeTableEnd;
             StringTableStart = stringTableStart;
             TextStart = textStart;
+            pointers = parsedPointers;
+            hasPointerPadding = pointerPadding;
 
-            int count = (TextStart - StringTableStart) / 2;
-            pointers = new ushort[count];
-            for (int i = 0; i < count; i++)
-                pointers[i] = ReadUInt16(Data, StringTableStart + i * 2);
-
-            logicalTextEnd = GetLogicalTextEnd(Data, TextStart);
-            int textSize = logicalTextEnd - TextStart;
-            List<int> starts = pointers.Where(x => x <= textSize).Select(x => (int)x).Distinct().OrderBy(x => x).ToList();
-            Dictionary<int, EVEChunk> chunksByOffset = new Dictionary<int, EVEChunk>();
-            for (int i = 0; i < starts.Count; i++)
+            for (int i = 0; i < pointers.Length; i++)
             {
-                int start = starts[i];
-                int end = i + 1 < starts.Count ? starts[i + 1] : textSize;
-                if (end <= start)
-                    continue;
-
+                int start = pointers[i];
+                int end = i + 1 < pointers.Length ? pointers[i + 1] : rawSize - TextStart;
                 EVEChunk chunk = new EVEChunk(start);
                 AddChunkEntries(chunk, start, end);
                 chunks.Add(chunk);
-                chunksByOffset.Add(start, chunk);
-            }
-
-            var addedOffsets = new HashSet<int>();
-            for (int pointerIndex = 0; pointerIndex < pointers.Length; pointerIndex++)
-            {
-                ushort pointer = pointers[pointerIndex];
-                if (pointer >= textSize)
-                {
-                    AddInvalidEntry(pointer, "<offset outside text>");
-                    continue;
-                }
-
-                if (IsNonIndependentPointer(pointerIndex, textSize)
-                    || !addedOffsets.Add(pointer)
-                    || !chunksByOffset.TryGetValue(pointer, out EVEChunk chunk))
-                {
-                    AddInvalidEntry(pointer, "<non-monotonic/shared offset>");
-                    continue;
-                }
-
                 foreach (EVEString entry in chunk.Entries)
                     Strings.Add(entry);
             }
         }
 
-        private bool IsNonIndependentPointer(int pointerIndex, int textSize)
-        {
-            if (pointerIndex + 1 >= pointers.Length)
-                return false;
-
-            int start = pointers[pointerIndex];
-            int end = pointers[pointerIndex + 1];
-            return end <= start || end > textSize;
-        }
-
         public static bool IsEve(byte[] data)
-            => TryReadHeader(data, 0, out _, out _, out _, out _);
+            => TryParseLayout(data, 0, out _, out _, out _, out _, out _, out _, out _, out _);
+
+        internal static bool TryGetRawSize(byte[] data, int offset, out int rawSize)
+        {
+            bool valid = TryParseLayout(data, offset, out _, out _, out _, out _, out _, out _,
+                out rawSize, out _);
+            return valid;
+        }
 
         internal static bool TryReadHeader(byte[] data, int offset, out ushort formatVersion,
             out ushort codeTableEnd, out ushort stringTableStart, out ushort textStart)
@@ -133,6 +103,92 @@ namespace PersonaEditorLib.FileContainer
                 && (codeTableEnd & 1) == 0
                 && (stringTableStart & 1) == 0
                 && (textStart & 1) == 0;
+        }
+
+        private static bool TryParseLayout(byte[] data, int offset, out ushort formatVersion,
+            out ushort codeTableEnd, out ushort stringTableStart, out ushort textStart,
+            out ushort[] recordPointers, out bool pointerPadding, out int rawSize, out string error)
+        {
+            recordPointers = Array.Empty<ushort>();
+            pointerPadding = false;
+            rawSize = 0;
+            error = "invalid event header.";
+            if (!TryReadHeader(data, offset, out formatVersion, out codeTableEnd,
+                out stringTableStart, out textStart))
+                return false;
+
+            int tableSize = textStart - stringTableStart;
+            if ((tableSize & 1) != 0)
+            {
+                error = "text-record offset table has an odd size.";
+                return false;
+            }
+
+            int wordCount = tableSize / 2;
+            ushort[] words = new ushort[wordCount];
+            for (int i = 0; i < words.Length; i++)
+                words[i] = ReadUInt16(data, offset + stringTableStart + i * 2);
+
+            pointerPadding = words.Length > 1 && words[words.Length - 1] == 0;
+            int pointerCount = words.Length - (pointerPadding ? 1 : 0);
+            recordPointers = new ushort[pointerCount];
+            Array.Copy(words, recordPointers, pointerCount);
+
+            if (recordPointers.Length == 0)
+            {
+                rawSize = stringTableStart;
+                error = null;
+                return true;
+            }
+            if (recordPointers[0] != 0)
+            {
+                error = "text-record offset table does not start at zero.";
+                return false;
+            }
+            for (int i = 1; i < recordPointers.Length; i++)
+                if (recordPointers[i - 1] >= recordPointers[i])
+                {
+                    error = "text-record offsets are not strictly increasing.";
+                    return false;
+                }
+
+            int blobStart = offset + textStart;
+            int lastStart = blobStart + recordPointers[recordPointers.Length - 1];
+            if (lastStart >= data.Length)
+            {
+                error = "last text-record offset is outside the file.";
+                return false;
+            }
+
+            int lastEnd = FindSequence(data, lastStart, data.Length, 0xFF, 0x00);
+            if (lastEnd < 0)
+            {
+                error = "last text record has no FF 00 terminator.";
+                return false;
+            }
+            rawSize = lastEnd + 2 - offset;
+
+            for (int i = 0; i < recordPointers.Length; i++)
+            {
+                int start = blobStart + recordPointers[i];
+                int end = i + 1 < recordPointers.Length
+                    ? blobStart + recordPointers[i + 1]
+                    : offset + rawSize;
+                if (end > data.Length || end - start < 2
+                    || data[end - 2] != 0xFF || data[end - 1] != 0x00)
+                {
+                    error = $"text record {i} does not end in FF 00.";
+                    return false;
+                }
+                if (FindSequence(data, start, end - 2, 0xFF, 0x00) >= 0)
+                {
+                    error = $"text record {i} contains an early FF 00 terminator.";
+                    return false;
+                }
+            }
+
+            error = null;
+            return true;
         }
 
         public void DiscardChanges()
@@ -185,6 +241,15 @@ namespace PersonaEditorLib.FileContainer
             }
         }
 
+        public bool MatchesExportedText(int index, string sourceText, bool removeSplit)
+        {
+            EVEString entry = Strings.FirstOrDefault(x => x.Index == index
+                && x.IsEditable && x.Kind == EVEStringKind.Text);
+            return entry != null && string.Equals(
+                FormatExportText(entry.OriginalText, removeSplit), sourceText ?? string.Empty,
+                StringComparison.Ordinal);
+        }
+
         public FormatEnum Type => FormatEnum.EVE;
 
         public List<GameFile> GetSubFiles() => SubFiles;
@@ -196,50 +261,48 @@ namespace PersonaEditorLib.FileContainer
             if (!HasChanges)
                 return Data;
 
-            Dictionary<int, byte[]> replacements = new Dictionary<int, byte[]>();
-            foreach (EVEChunk chunk in chunks)
-                if (chunk.HasChanges)
-                    replacements[chunk.Offset] = chunk.GetData();
-
-            int textSize = logicalTextEnd - TextStart;
-            List<int> starts = pointers.Where(x => x <= textSize).Select(x => (int)x).Distinct().OrderBy(x => x).ToList();
-            var output = new List<byte>(Math.Max(originalData.Length, TextStart + textSize));
+            var output = new List<byte>(originalData.Length);
             for (int i = 0; i < StringTableStart; i++)
                 output.Add(originalData[i]);
 
-            Dictionary<int, int> newOffsets = new Dictionary<int, int>();
             int cursor = 0;
-            var textChunks = new List<byte[]>();
-            for (int i = 0; i < starts.Count; i++)
+            var records = new List<byte[]>(chunks.Count);
+            for (int i = 0; i < chunks.Count; i++)
             {
-                int start = starts[i];
-                int end = i + 1 < starts.Count ? starts[i + 1] : textSize;
-                byte[] chunk = replacements.TryGetValue(start, out byte[] changed)
-                    ? changed
-                    : CopyBytes(originalData, TextStart + start, end - start);
+                if (cursor > ushort.MaxValue)
+                    throw new InvalidDataException($"EVE: text record {i} offset exceeds 16 bits.");
+                output.Add((byte)(cursor >> 8));
+                output.Add((byte)cursor);
 
-                newOffsets[start] = cursor;
-                textChunks.Add(chunk);
-                cursor = checked(cursor + chunk.Length);
+                byte[] record = chunks[i].HasChanges
+                    ? chunks[i].GetData()
+                    : CopyBytes(originalData, TextStart + pointers[i],
+                        (i + 1 < pointers.Length ? pointers[i + 1] : originalData.Length - TextStart) - pointers[i]);
+                ValidateRecord(record, i);
+                records.Add(record);
+                cursor = checked(cursor + record.Length);
             }
 
-            foreach (ushort pointer in pointers)
+            if (hasPointerPadding)
             {
-                int newOffset = newOffsets.TryGetValue(pointer, out int remapped) ? remapped : pointer;
-                if (newOffset > ushort.MaxValue)
-                    throw new InvalidDataException("EVE: rebuilt string table is too large.");
-                output.Add((byte)(newOffset >> 8));
-                output.Add((byte)newOffset);
-            }
-
-            foreach (byte[] chunk in textChunks)
-                output.AddRange(chunk);
-            for (int i = logicalTextEnd; i < originalData.Length; i++)
-                output.Add(originalData[i]);
-
-            while (output.Count < originalData.Length)
                 output.Add(0);
+                output.Add(0);
+            }
+            if (output.Count != TextStart)
+                throw new InvalidDataException("EVE: rebuilt text-record offset table changed size.");
+
+            foreach (byte[] record in records)
+                output.AddRange(record);
+
             return output.ToArray();
+        }
+
+        private static void ValidateRecord(byte[] record, int index)
+        {
+            if (record.Length < 2 || record[record.Length - 2] != 0xFF || record[record.Length - 1] != 0x00)
+                throw new InvalidDataException($"EVE: text record {index} must end in FF 00.");
+            if (FindSequence(record, 0, record.Length - 2, 0xFF, 0x00) >= 0)
+                throw new InvalidDataException($"EVE: text record {index} contains an early FF 00 terminator.");
         }
 
         private void AddChunkEntries(EVEChunk chunk, int start, int end)
@@ -254,7 +317,7 @@ namespace PersonaEditorLib.FileContainer
                     continue;
 
                 AddSegment(chunk, segmentStart, position);
-                chunk.Separators.Add(TextboxSeparator);
+                chunk.AddSeparator(TextboxSeparator);
                 segmentStart = position + 4;
                 position += 3;
             }
@@ -286,6 +349,9 @@ namespace PersonaEditorLib.FileContainer
             textStart = 0;
             while (prefixStart < end && !Matches(TextStart + prefixStart, SpeakerPrefix))
             {
+                if (TryDecodeAccent(originalData, TextStart + prefixStart, TextStart + end, out _))
+                    return false;
+
                 byte value = originalData[TextStart + prefixStart];
                 if (IsTextByte(value) || value == 0x0A || value == 0x0D)
                     return false;
@@ -351,10 +417,25 @@ namespace PersonaEditorLib.FileContainer
 
             for (int position = start; position < end;)
             {
+                if (TryDecodeAccent(originalData, TextStart + position, TextStart + end, out _))
+                {
+                    if (editableStart < 0)
+                        editableStart = position;
+                    editableEnd = position + 2;
+                    position += 2;
+                    continue;
+                }
+
                 byte value = originalData[TextStart + position];
                 if (value == 0xFF)
                 {
                     int commandLength = GetCommandLength(originalData, TextStart + position, TextStart + end);
+                    if (IsLeadingTextControl(originalData, TextStart + position, TextStart + end))
+                    {
+                        if (editableStart < 0)
+                            editableStart = position;
+                        editableEnd = position + commandLength;
+                    }
                     position += commandLength;
                     if (commandLength == 2 && position - 1 < end && originalData[TextStart + position - 1] == 0x05)
                         position += Math.Min(2, end - position);
@@ -406,8 +487,7 @@ namespace PersonaEditorLib.FileContainer
             if (string.IsNullOrEmpty(text))
                 return string.Empty;
 
-            int first = -1;
-            int last = -1;
+            bool hasText = false;
             for (int index = 0; index < text.Length; index++)
             {
                 if (text[index] == '{')
@@ -423,37 +503,32 @@ namespace PersonaEditorLib.FileContainer
                 if (text[index] == '\\' && index + 1 < text.Length
                     && (text[index + 1] == 'n' || text[index + 1] == 'r'))
                 {
-                    if (first < 0)
-                        first = index;
-                    last = index + 2;
+                    hasText = true;
                     index++;
                     continue;
                 }
 
                 if (IsTextCharacter(text[index]))
-                {
-                    if (first < 0)
-                        first = index;
-                    last = index + 1;
-                }
+                    hasText = true;
             }
 
-            if (first < 0)
+            if (!hasText)
                 return string.Empty;
 
-            string value = text.Substring(first, last - first);
+            string value = text;
             return removeSplit ? value.Replace("{FF 01}", " ") : value;
         }
 
         private static ushort ReadUInt16(byte[] data, int offset)
             => (ushort)((data[offset] << 8) | data[offset + 1]);
 
-        private static int GetLogicalTextEnd(byte[] data, int textStart)
+        private static int FindSequence(byte[] data, int start, int end, byte first, byte second)
         {
-            for (int i = data.Length - 1; i >= textStart; i--)
-                if (data[i] != 0)
-                    return i + 1;
-            return textStart;
+            int limit = Math.Min(end, data.Length);
+            for (int i = Math.Max(0, start); i + 1 < limit; i++)
+                if (data[i] == first && data[i + 1] == second)
+                    return i;
+            return -1;
         }
 
         private static byte[] CopyBytes(byte[] data, int offset, int length)
@@ -469,7 +544,12 @@ namespace PersonaEditorLib.FileContainer
             int end = offset + length;
             for (int i = offset; i < end; i++)
             {
-                if (data[i] == 0xFF)
+                if (TryDecodeAccent(data, i, end, out char accent))
+                {
+                    builder.Append(accent);
+                    i++;
+                }
+                else if (data[i] == 0xFF)
                 {
                     int commandLength = GetCommandLength(data, i, end);
                     AppendByteGroup(builder, data, i, commandLength);
@@ -503,7 +583,8 @@ namespace PersonaEditorLib.FileContainer
                 else
                 {
                     int rawStart = i;
-                    while (i < end && !IsTextByte(data[i])
+                    while (i < end && !TryDecodeAccent(data, i, end, out _)
+                        && !IsTextByte(data[i])
                         && data[i] != 0x0A && data[i] != 0x0D
                         && data[i] != 0x0F && data[i] != 0xFF)
                         i++;
@@ -520,6 +601,13 @@ namespace PersonaEditorLib.FileContainer
             text ??= string.Empty;
             for (int i = 0; i < text.Length; i++)
             {
+                if (TryEncodeAccent(text[i], out byte accentByte))
+                {
+                    result.Add(AccentPrefix);
+                    result.Add(accentByte);
+                    continue;
+                }
+
                 if (text[i] == '{')
                 {
                     int close = text.IndexOf('}', i + 1);
@@ -529,7 +617,14 @@ namespace PersonaEditorLib.FileContainer
                         i = close;
                         continue;
                     }
+
+                    throw new InvalidDataException(
+                        $"Invalid byte escape at character {i}. Use {{XX XX ...}} with two hexadecimal digits per byte.");
                 }
+
+                if (text[i] == '}')
+                    throw new InvalidDataException(
+                        $"Unexpected '}}' at character {i}. Encode a literal closing brace as {{7D}}.");
 
                 if (text[i] == '\\' && i + 1 < text.Length)
                 {
@@ -560,7 +655,9 @@ namespace PersonaEditorLib.FileContainer
                 }
 
                 if (text[i] > 0x7F)
-                    throw new InvalidDataException("EVE text must use ASCII or {XX ...} byte escapes.");
+                    throw new InvalidDataException(
+                        $"Character '{text[i]}' (U+{(int)text[i]:X4}) has no EVE byte mapping. " +
+                        "Use a supported character or a {XX ...} byte escape.");
                 result.Add((byte)text[i]);
             }
             return result.ToArray();
@@ -584,7 +681,57 @@ namespace PersonaEditorLib.FileContainer
             => value >= 0x20 && value <= 0x7E && value != '{' && value != '}';
 
         private static bool IsTextCharacter(char value)
-            => value >= 0x20 && value <= 0x7E && value != '{' && value != '}';
+            => (value >= 0x20 && value <= 0x7E && value != '{' && value != '}')
+                || UppercaseAccents.IndexOf(value) >= 0
+                || LowercaseAccents.IndexOf(value) >= 0;
+
+        // FF 82 is an inline placeholder and can become the first text byte
+        // when a translation removes the source string's leading space.
+        private static bool IsLeadingTextControl(byte[] data, int offset, int end)
+            => offset + 1 < end && data[offset] == 0xFF && data[offset + 1] == 0x82;
+
+        private static bool TryDecodeAccent(byte[] data, int offset, int end, out char value)
+        {
+            value = default;
+            if (offset < 0 || offset + 1 >= end || data[offset] != AccentPrefix)
+                return false;
+
+            int index = data[offset + 1] - UppercaseAccentStart;
+            if (index >= 0 && index < UppercaseAccents.Length)
+            {
+                value = UppercaseAccents[index];
+                return true;
+            }
+
+            index = data[offset + 1] - LowercaseAccentStart;
+            if (index >= 0 && index < LowercaseAccents.Length)
+            {
+                value = LowercaseAccents[index];
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryEncodeAccent(char value, out byte encoded)
+        {
+            int index = UppercaseAccents.IndexOf(value);
+            if (index >= 0)
+            {
+                encoded = (byte)(UppercaseAccentStart + index);
+                return true;
+            }
+
+            index = LowercaseAccents.IndexOf(value);
+            if (index >= 0)
+            {
+                encoded = (byte)(LowercaseAccentStart + index);
+                return true;
+            }
+
+            encoded = 0;
+            return false;
+        }
 
         private static void AppendByteGroup(StringBuilder builder, byte[] data, int offset, int length)
         {
@@ -637,22 +784,34 @@ namespace PersonaEditorLib.FileContainer
         {
             public int Offset { get; }
             public List<EVEString> Entries { get; } = new List<EVEString>();
-            public List<byte[]> Separators { get; } = new List<byte[]>();
             public bool HasChanges => Entries.Any(x => x.Text != x.OriginalText);
+            private readonly List<byte[]> separators = new List<byte[]>();
+            private readonly List<int> separatorEntryIndices = new List<int>();
 
             public EVEChunk(int offset)
             {
                 Offset = offset;
             }
 
+            public void AddSeparator(byte[] separator)
+            {
+                separators.Add(separator);
+                separatorEntryIndices.Add(Entries.Count - 1);
+            }
+
             public byte[] GetData()
             {
                 var result = new List<byte>();
+                int separatorIndex = 0;
                 for (int i = 0; i < Entries.Count; i++)
                 {
                     result.AddRange(Entries[i].GetData());
-                    if (i < Separators.Count)
-                        result.AddRange(Separators[i]);
+                    while (separatorIndex < separators.Count
+                        && separatorEntryIndices[separatorIndex] == i)
+                    {
+                        result.AddRange(separators[separatorIndex]);
+                        separatorIndex++;
+                    }
                 }
                 return result.ToArray();
             }
@@ -705,7 +864,17 @@ namespace PersonaEditorLib.FileContainer
 
         internal byte[] GetData()
         {
-            byte[] textData = EVE.Unescape(Text);
+            byte[] textData;
+            try
+            {
+                textData = EVE.Unescape(Text);
+            }
+            catch (InvalidDataException e)
+            {
+                throw new InvalidDataException(
+                    $"EVE entry {Index} ({Kind}): {e.Message}", e);
+            }
+
             byte[] result = new byte[prefix.Length + textData.Length + suffix.Length];
             if (prefix.Length > 0)
                 Buffer.BlockCopy(prefix, 0, result, 0, prefix.Length);

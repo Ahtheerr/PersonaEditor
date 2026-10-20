@@ -57,6 +57,8 @@
 
 ### Devil Summoner: Soul Hackers
 
+* Containers: EVENT.BIN, including embedded EVE event scripts;
+* Text: EVE event scripts, with TSV export/import and lossless control-byte escapes;
 * Graphics: NintendoWare TGA (.tga);
 
 ### Devil Survivor Overclocked

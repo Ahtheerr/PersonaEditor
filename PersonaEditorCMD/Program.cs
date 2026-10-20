@@ -77,6 +77,8 @@ namespace PersonaEditorCMD
             }
             catch (Exception e)
             {
+                Console.Error.WriteLine($"Error: {e.Message}");
+                Environment.ExitCode = 1;
             }
         }
 
@@ -152,8 +154,10 @@ namespace PersonaEditorCMD
                     if (file != null)
                         ProcessFile(file, argwrk.ArgumentList, Path.GetDirectoryName(filePath), batchTextNames[filePath]);
                 }
-                catch
+                catch (Exception e)
                 {
+                    Console.Error.WriteLine($"Error processing \"{filePath}\": {e.Message}");
+                    Environment.ExitCode = 1;
                 }
             }
 
@@ -539,8 +543,17 @@ namespace PersonaEditorCMD
                     if (row[3] != "")
                         legacyImported.Add((index, row[3]));
                 }
-                else if (row.Length >= 4 && (row[2] != "" || row[3] != ""))
-                    importedRows.Add((index, row[2], row[3]));
+                else if (row.Length >= 4)
+                {
+                    string text = row.Length >= 5 && row[4] != "" ? row[4] : row[3];
+                    if (row.Length >= 5 && row[4] != ""
+                        && !eve.MatchesExportedText(index, row[3], parameters.RemoveSplit))
+                        throw new InvalidDataException(
+                            $"EVE text source mismatch for '{objectFileName}', entry {index}. " +
+                            "Re-export the original EVENT.BIN with this version before importing translations.");
+                    if (row[2] != "" || text != "")
+                        importedRows.Add((index, row[2], text));
+                }
                 else if (row[2] != "")
                     legacyImported.Add((index, row[2]));
             }

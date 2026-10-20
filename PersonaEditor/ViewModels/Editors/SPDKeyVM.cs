@@ -63,6 +63,8 @@ namespace PersonaEditor.ViewModels.Editors
                 {
                     Key.Xdel = value;
                     Notify("X2");
+                    Notify(nameof(XScalePercent));
+                    Notify(nameof(CanEditXScale));
                     Notify("Rect");
                 }
             }
@@ -89,6 +91,8 @@ namespace PersonaEditor.ViewModels.Editors
                 {
                     Key.Ydel = value;
                     Notify("Y2");
+                    Notify(nameof(YScalePercent));
+                    Notify(nameof(CanEditYScale));
                     Notify("Rect");
                 }
             }
@@ -102,6 +106,8 @@ namespace PersonaEditor.ViewModels.Editors
                 {
                     Key.XScl = value;
                     Notify("X3");
+                    Notify(nameof(XScalePercent));
+                    Notify(nameof(PreviewWidth));
                 }
             }
         }
@@ -114,9 +120,40 @@ namespace PersonaEditor.ViewModels.Editors
                 {
                     Key.YScl = value;
                     Notify("Y3");
+                    Notify(nameof(YScalePercent));
+                    Notify(nameof(PreviewHeight));
                 }
             }
         }
+
+        // SPD scale stores half of the displayed dimension, not a multiplier.
+        public bool CanEditXScale => X2 > 0;
+
+        public bool CanEditYScale => Y2 > 0;
+
+        public double XScalePercent
+        {
+            get { return CanEditXScale ? 200.0 * X3 / X2 : 0; }
+            set
+            {
+                if (CanEditXScale && double.IsFinite(value))
+                    X3 = (int)Math.Round(Math.Clamp(value, 0, 200) * X2 / 200.0, MidpointRounding.AwayFromZero);
+            }
+        }
+
+        public double YScalePercent
+        {
+            get { return CanEditYScale ? 200.0 * Y3 / Y2 : 0; }
+            set
+            {
+                if (CanEditYScale && double.IsFinite(value))
+                    Y3 = (int)Math.Round(Math.Clamp(value, 0, 200) * Y2 / 200.0, MidpointRounding.AwayFromZero);
+            }
+        }
+
+        public double PreviewWidth => Math.Max(0, 2.0 * X3);
+
+        public double PreviewHeight => Math.Max(0, 2.0 * Y3);
 
         public Rect Rect
         {

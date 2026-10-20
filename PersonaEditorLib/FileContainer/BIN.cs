@@ -11,6 +11,46 @@ namespace PersonaEditorLib.FileContainer
         private const int OldNameLength = 0xFC;
         private const int NewNameLength = 0x20;
 
+        public static bool IsOldArchive(byte[] data)
+        {
+            if (data == null || data.Length < 0x200)
+                return false;
+
+            long position = 0;
+            int count = 0;
+            while (position < data.Length - 0x100)
+            {
+                int start = (int)position;
+                if (data[start] == 0)
+                    return false;
+                bool terminated = false;
+                for (int i = 0; i < OldNameLength; i++)
+                {
+                    byte value = data[start + i];
+                    if (value == 0)
+                        terminated = true;
+                    else if (terminated || value < 0x20 || value > 0x7E)
+                        return false;
+                }
+
+                int size = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(start + OldNameLength, 4));
+                if (size < 0)
+                    return false;
+                position += 0x100L + size;
+                position += (0x40 - position % 0x40) % 0x40;
+                if (position > data.Length - 0x100)
+                    return false;
+                count++;
+            }
+
+            if (count == 0 || position != data.Length - 0x100)
+                return false;
+            for (int i = (int)position; i < data.Length; i++)
+                if (data[i] != 0)
+                    return false;
+            return true;
+        }
+
         public List<GameFile> SubFiles { get; } = new List<GameFile>();
 
         public BIN(string path)

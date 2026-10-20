@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace PersonaEditorLib.FileContainer
@@ -13,7 +14,9 @@ namespace PersonaEditorLib.FileContainer
         private const int DirectoryRecordSize = 0x14;
         private const int BlockAlignment = 0x800;
 
-        private readonly byte[] directoryAndPadding;
+        private readonly byte[] prefix;
+        private readonly List<byte[]> originalPadding = new List<byte[]>();
+        private readonly List<int> originalRawSizes = new List<int>();
 
         public List<GameFile> SubFiles { get; } = new List<GameFile>();
 
@@ -22,31 +25,28 @@ namespace PersonaEditorLib.FileContainer
             if (data == null)
                 throw new ArgumentNullException(nameof(data));
 
-            Parse(data, out int dataStart, out List<string> names, out List<int> blockOffsets);
-            directoryAndPadding = new byte[dataStart];
-            Buffer.BlockCopy(data, 0, directoryAndPadding, 0, dataStart);
+            Parse(data, out int dataStart, out List<string> catalogNames, out List<int> blockOffsets,
+                out List<int> rawSizes);
+            prefix = new byte[dataStart];
+            Buffer.BlockCopy(data, 0, prefix, 0, dataStart);
 
-            var uniqueNames = new List<string>();
-            var seenNames = new HashSet<string>(StringComparer.Ordinal);
-            foreach (string name in names)
-                if (seenNames.Add(name))
-                    uniqueNames.Add(name);
-
-            if (uniqueNames.Count > blockOffsets.Count)
+            List<string> physicalNames = GetPhysicalNames(catalogNames, blockOffsets.Count);
+            if (physicalNames.Count != blockOffsets.Count)
                 throw new InvalidDataException("EVENT.BIN: directory contains more EVE names than blocks.");
 
             for (int i = 0; i < blockOffsets.Count; i++)
             {
                 int start = blockOffsets[i];
-                int end = i + 1 < blockOffsets.Count ? blockOffsets[i + 1] : data.Length;
-                int size = end - start;
-                byte[] block = new byte[size];
-                Buffer.BlockCopy(data, start, block, 0, size);
+                int rawSize = rawSizes[i];
+                int allocationEnd = i + 1 < blockOffsets.Count ? blockOffsets[i + 1] : data.Length;
+                byte[] raw = new byte[rawSize];
+                Buffer.BlockCopy(data, start, raw, 0, rawSize);
+                byte[] padding = new byte[allocationEnd - start - rawSize];
+                Buffer.BlockCopy(data, start + rawSize, padding, 0, padding.Length);
 
-                string name = i < uniqueNames.Count
-                    ? uniqueNames[i]
-                    : $"UNREFERENCED_{i - uniqueNames.Count:00}.EVE";
-                SubFiles.Add(new GameFile(name, new EVE(block)));
+                SubFiles.Add(new GameFile(physicalNames[i], new EVE(raw)));
+                originalRawSizes.Add(rawSize);
+                originalPadding.Add(padding);
             }
         }
 
@@ -54,7 +54,7 @@ namespace PersonaEditorLib.FileContainer
         {
             try
             {
-                Parse(data, out _, out _, out _);
+                Parse(data, out _, out _, out _, out _);
                 return true;
             }
             catch
@@ -64,7 +64,7 @@ namespace PersonaEditorLib.FileContainer
         }
 
         private static void Parse(byte[] data, out int dataStart, out List<string> names,
-            out List<int> blockOffsets)
+            out List<int> blockOffsets, out List<int> rawSizes)
         {
             if (data == null || data.Length < DirectoryRecordSize)
                 throw new InvalidDataException("EVENT.BIN: data is too small for a directory.");
@@ -82,7 +82,7 @@ namespace PersonaEditorLib.FileContainer
                     break;
                 }
 
-                string name = ReadName(data, position + 2, 12);
+                string name = ReadName(data, position + 2, 16);
                 if (string.IsNullOrEmpty(name)
                     || !name.EndsWith(".EVE", StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("EVENT.BIN: invalid directory entry name.");
@@ -96,17 +96,48 @@ namespace PersonaEditorLib.FileContainer
             if (names.Count == 0)
                 throw new InvalidDataException("EVENT.BIN: directory contains no EVE entries.");
 
-            dataStart = AlignUp(position, BlockAlignment);
-            if (dataStart > data.Length)
-                throw new InvalidDataException("EVENT.BIN: directory extends past the end of the file.");
+            int catalogEnd = position - DirectoryRecordSize;
+            dataStart = AlignUp(catalogEnd, BlockAlignment);
+            while (dataStart < data.Length && !EVE.TryGetRawSize(data, dataStart, out _))
+                dataStart += BlockAlignment;
+            if (dataStart >= data.Length)
+                throw new InvalidDataException("EVENT.BIN: no aligned EVE payload was found.");
 
             blockOffsets = new List<int>();
-            for (int offset = dataStart; offset <= data.Length - 8; offset += BlockAlignment)
-                if (EVE.TryReadHeader(data, offset, out _, out _, out _, out _))
-                    blockOffsets.Add(offset);
+            rawSizes = new List<int>();
+            int offset = dataStart;
+            while (offset < data.Length)
+            {
+                if (!EVE.TryGetRawSize(data, offset, out int rawSize))
+                    throw new InvalidDataException($"EVENT.BIN: invalid EVE payload at 0x{offset:X}.");
+                int next = AlignUp(checked(offset + rawSize), BlockAlignment);
+                if (next > data.Length)
+                    throw new InvalidDataException($"EVENT.BIN: EVE payload at 0x{offset:X} extends past EOF.");
 
-            if (blockOffsets.Count == 0)
-                throw new InvalidDataException("EVENT.BIN: no EVE blocks were found.");
+                blockOffsets.Add(offset);
+                rawSizes.Add(rawSize);
+                offset = next;
+            }
+            if (offset != data.Length)
+                throw new InvalidDataException("EVENT.BIN: final EVE allocation is incomplete.");
+        }
+
+        private static List<string> GetPhysicalNames(List<string> catalogNames, int physicalCount)
+        {
+            List<string> referenced = catalogNames.Distinct(StringComparer.Ordinal).ToList();
+            int unreferencedCount = physicalCount - referenced.Count;
+            if (unreferencedCount < 0)
+                throw new InvalidDataException(
+                    "EVENT.BIN: archive has fewer physical EVEs than referenced names.");
+            if (unreferencedCount == 0)
+                return referenced;
+
+            int insertion = referenced.FindIndex(x => x.StartsWith("DGST_", StringComparison.Ordinal));
+            if (insertion < 0)
+                insertion = referenced.Count;
+            for (int i = 0; i < unreferencedCount; i++)
+                referenced.Insert(insertion + i, $"UNREFERENCED_{i:00}.EVE");
+            return referenced;
         }
 
         private static string ReadName(byte[] data, int offset, int length)
@@ -116,10 +147,11 @@ namespace PersonaEditorLib.FileContainer
                 end++;
 
             for (int i = offset; i < end; i++)
-                if (!((data[i] >= 'A' && data[i] <= 'Z')
-                    || (data[i] >= '0' && data[i] <= '9')
-                    || data[i] == '_' || data[i] == '.'))
+                if (data[i] < 0x20 || data[i] > 0x7E)
                     throw new InvalidDataException("EVENT.BIN: directory name is not ASCII.");
+            for (int i = end; i < offset + length; i++)
+                if (data[i] != 0)
+                    throw new InvalidDataException("EVENT.BIN: directory name padding is not zeroed.");
 
             return Encoding.ASCII.GetString(data, offset, end - offset);
         }
@@ -143,18 +175,37 @@ namespace PersonaEditorLib.FileContainer
 
         public byte[] GetData()
         {
-            using (var output = new MemoryStream(directoryAndPadding.Length))
+            using (var output = new MemoryStream(prefix.Length))
             {
-                output.Write(directoryAndPadding, 0, directoryAndPadding.Length);
-                foreach (GameFile file in SubFiles)
+                output.Write(prefix, 0, prefix.Length);
+                for (int i = 0; i < SubFiles.Count; i++)
                 {
-                    byte[] data = file.GameData.GetData();
+                    GameFile file = SubFiles[i];
+                    byte[] data;
+                    try
+                    {
+                        data = file.GameData.GetData();
+                    }
+                    catch (Exception e)
+                    {
+                        throw new InvalidDataException(
+                            $"EVENT.BIN: failed to save '{file.Name}': {e.Message}", e);
+                    }
+
                     output.Write(data, 0, data.Length);
-                    int padding = AlignUp(data.Length, BlockAlignment) - data.Length;
-                    if (padding != 0)
-                        output.Write(new byte[padding], 0, padding);
+                    int paddingSize = AlignUp(data.Length, BlockAlignment) - data.Length;
+                    byte[] padding = data.Length == originalRawSizes[i]
+                        && originalPadding[i].Length == paddingSize
+                        ? originalPadding[i]
+                        : new byte[paddingSize];
+                    if (padding.Length != 0)
+                        output.Write(padding, 0, padding.Length);
                 }
-                return output.ToArray();
+
+                byte[] result = output.ToArray();
+                if (!IsEventBin(result))
+                    throw new InvalidDataException("EVENT.BIN: rebuilt archive failed structural validation.");
+                return result;
             }
         }
 

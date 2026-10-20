@@ -64,6 +64,7 @@ namespace PersonaEditor.ViewModels.Editors
                 _Rect = new Rect(0, 0, _TextureImage.Width, _TextureImage.Height);
                 Notify("Rect");
                 Notify("TextureImage");
+                Notify(nameof(SelectedSpriteImage));
             }
         }
 
@@ -71,14 +72,51 @@ namespace PersonaEditor.ViewModels.Editors
 
         public object SelectedItem
         {
+            get { return _SelectedItem; }
             set
             {
+                if (ReferenceEquals(_SelectedItem, value))
+                    return;
                 if (_SelectedItem is SPDKeyVM itt)
+                {
                     itt.IsSelected = false;
+                    itt.PropertyChanged -= SelectedSprite_PropertyChanged;
+                }
                 _SelectedItem = value;
                 if (_SelectedItem is SPDKeyVM itt2)
+                {
                     itt2.IsSelected = true;
+                    itt2.PropertyChanged += SelectedSprite_PropertyChanged;
+                }
+                Notify(nameof(SelectedItem));
+                Notify(nameof(SelectedSpriteImage));
             }
+        }
+
+        public ImageSource SelectedSpriteImage
+        {
+            get
+            {
+                if (!(SelectedItem is SPDKeyVM key) || TextureImage == null || key.X2 <= 0 || key.Y2 <= 0)
+                    return null;
+
+                // Keep the entire crop extent, including transparent space outside the texture.
+                var crop = new Rect(key.X1, key.Y1, key.X2, key.Y2);
+                var drawing = new DrawingGroup();
+                drawing.Children.Add(new GeometryDrawing(Brushes.Transparent, null, new RectangleGeometry(crop)));
+                var textureDrawing = new DrawingGroup { ClipGeometry = new RectangleGeometry(crop) };
+                textureDrawing.Children.Add(new ImageDrawing(TextureImage,
+                    new Rect(0, 0, TextureImage.PixelWidth, TextureImage.PixelHeight)));
+                drawing.Children.Add(textureDrawing);
+                drawing.Freeze();
+                return new DrawingImage(drawing);
+            }
+        }
+
+        private void SelectedSprite_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(SPDKeyVM.Rect))
+                Notify(nameof(SelectedSpriteImage));
         }
 
         #endregion PublicProperties

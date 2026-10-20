@@ -16,9 +16,12 @@ namespace PersonaEditorLib.Text
         private const string BundleMagic = "TBB1";
         private const string RawNoAutoPrefix = "[RN]";
         private const string LineBreakToken = "{F801}";
+        private const string AlternateLineBreakToken = "{8001}";
 
-        private static readonly Encoding ShiftJis = Encoding.GetEncoding("shift-jis");
-        private static readonly Dictionary<byte, int> ControlU16Counts = new Dictionary<byte, int>
+        private static readonly Encoding ShiftJis = Encoding.GetEncoding(932,
+            EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+        // Default F8 layouts shared by the supported MSG2 and TBB1 variants.
+        private static readonly Dictionary<byte, int> F8ControlU16Counts = new Dictionary<byte, int>
         {
             { 0x01, 0 },
             { 0x02, 0 },
@@ -28,6 +31,7 @@ namespace PersonaEditorLib.Text
             { 0x12, 0 },
             { 0x13, 4 },
             { 0x14, 2 },
+            { 0x42, 1 },
             { 0x43, 1 },
             { 0x44, 0 },
             { 0x45, 1 },
@@ -64,12 +68,37 @@ namespace PersonaEditorLib.Text
             { 0x71, 1 },
             { 0x72, 1 },
             { 0x73, 1 },
+            { 0x74, 1 },
             { 0x75, 1 },
             { 0x77, 1 },
             { 0x78, 1 },
             { 0x7A, 1 },
             { 0x7B, 4 },
-            { 0x7D, 1 }
+            { 0x7D, 1 },
+            { 0x7E, 0 }
+        };
+        private static readonly Dictionary<byte, int> AlternateControlU16Counts = new Dictionary<byte, int>
+        {
+            { 0x01, 0 },
+            { 0x02, 0 },
+            { 0x04, 1 },
+            { 0x12, 0 },
+            { 0x13, 1 },
+            { 0x16, 0 },
+            { 0x17, 0 },
+            { 0x18, 0 },
+            { 0x41, 1 },
+            { 0x42, 1 },
+            { 0x43, 1 },
+            { 0x51, 1 },
+            { 0x52, 1 },
+            { 0x53, 1 },
+            { 0x54, 1 },
+            { 0x55, 1 },
+            { 0x56, 1 },
+            { 0x57, 1 },
+            { 0x58, 1 },
+            { 0x7A, 1 }
         };
 
         private readonly byte[] originalData;
@@ -193,7 +222,7 @@ namespace PersonaEditorLib.Text
                 if (!byId.TryGetValue(item.Id, out MBMEntry entry) || string.IsNullOrEmpty(item.Text))
                     continue;
 
-                entry.NewText = PrepareImportedText(item.Text, charWidth, width);
+                entry.NewText = PrepareImportedText(item.Text, charWidth, width, entry.LineBreakToken);
             }
         }
 
@@ -212,7 +241,7 @@ namespace PersonaEditorLib.Text
                 if (text == null)
                     continue;
 
-                text.NewText = PrepareImportedText(item.Text, charWidth, width);
+                text.NewText = PrepareImportedText(item.Text, charWidth, width, entry.LineBreakToken);
             }
         }
 
@@ -313,6 +342,7 @@ namespace PersonaEditorLib.Text
             }
 
             var sectionEntries = new List<MBMEntry>();
+            int expectedTextOffset = textStart;
 
             for (int slot = 0; slot < slotCount; slot++)
             {
@@ -326,18 +356,32 @@ namespace PersonaEditorLib.Text
                     continue;
                 if (id != slot)
                     throw new Exception("MBM: row id does not match slot index");
-                if (byteLength <= 0 || textOffset < textStart || textOffset + byteLength > data.Length)
+                if (byteLength <= 0 || textOffset < textStart
+                    || (long)textOffset + byteLength > data.Length)
                     throw new Exception("MBM: entry points outside the text blob");
+                if (!countIsSlotCount && unknown != 0)
+                    throw new Exception("MBM: active row has a nonzero reserved field");
+                if (!countIsSlotCount && textOffset != expectedTextOffset)
+                    throw new Exception("MBM: records do not exactly tile the text blob");
 
                 byte[] record = data.Skip(textOffset).Take(byteLength).ToArray();
                 var entry = new MBMEntry(checked(virtualIdBase + id), id, byteLength, textOffset,
                     unknown, record, DecodeRecord(record, recordFormat), recordFormat);
                 sectionEntries.Add(entry);
                 entries.Add(entry);
+                if (!countIsSlotCount)
+                    expectedTextOffset = checked(expectedTextOffset + byteLength);
             }
 
             if (!countIsSlotCount && sectionEntries.Count != entryCount)
                 throw new Exception("MBM: active entry count mismatch");
+            if (!countIsSlotCount && expectedTextOffset != data.Length)
+                throw new Exception("MBM: records do not cover the complete text blob");
+            if (!countIsSlotCount && entryCount == 0 && data.Length != HeaderSize)
+                throw new Exception("MBM: empty bank contains unexpected slot or text data");
+            if (!countIsSlotCount && entryCount > 0
+                && sectionEntries[sectionEntries.Count - 1].RecordId != slotCount - 1)
+                throw new Exception("MBM: sparse table has unused trailing slots");
 
             return new MBMSection(slotCount, countIsSlotCount, sectionEntries);
         }
@@ -367,7 +411,7 @@ namespace PersonaEditorLib.Text
                     continue;
                 }
 
-                if (record[position] == 0xF8)
+                if (IsControlIntroducer(record[position], recordFormat))
                 {
                     DecodeControl(record, ref position, output, recordFormat);
                     continue;
@@ -377,16 +421,20 @@ namespace PersonaEditorLib.Text
                 while (position < record.Length
                     && !IsTerminator(record, position, recordFormat)
                     && !(recordFormat == RecordFormat.Legacy && IsInlineNull(record, position))
-                    && record[position] != 0xF8)
+                    && !IsControlIntroducer(record[position], recordFormat))
                 {
                     byte value = record[position];
-                    if (value < 0x80 || (value >= 0xA1 && value <= 0xDF))
+                    if (value == 0)
+                        throw new Exception("MBM: unexpected single null byte");
+                    if (value <= 0x7F || (value >= 0xA1 && value <= 0xDF))
                         position++;
-                    else
+                    else if ((value >= 0x81 && value <= 0x9F) || (value >= 0xE0 && value <= 0xFC))
                         position += 2;
+                    else
+                        throw new Exception($"MBM: invalid CP932 lead byte {value:X2}");
                 }
 
-                if (position > record.Length)
+                if (position > record.Length - 2)
                     throw new Exception("MBM: truncated CP932 character");
 
                 output.Append(NormalizeCp932(ShiftJis.GetString(record, start, position - start)));
@@ -397,18 +445,20 @@ namespace PersonaEditorLib.Text
 
         private static void DecodeControl(byte[] record, ref int position, StringBuilder output, RecordFormat recordFormat)
         {
-            if (position + 2 > record.Length)
+            int contentEnd = record.Length - 2;
+            if (position + 2 > contentEnd)
                 throw new Exception("MBM: truncated control opcode");
 
+            byte introducer = record[position];
             byte opcode = record[position + 1];
             position += 2;
 
-            if (opcode == 0x1B)
+            if (introducer == 0xF8 && opcode == 0x1B)
             {
                 if (recordFormat == RecordFormat.NullTerminated)
                 {
                     int identifierEnd = Array.IndexOf(record, (byte)0, position);
-                    if (identifierEnd < position)
+                    if (identifierEnd < position || identifierEnd >= contentEnd)
                         throw new Exception("MBM: invalid null-terminated F81B identifier");
 
                     ReadOnlySpan<byte> identifierBytes = record.AsSpan(position, identifierEnd - position);
@@ -419,7 +469,7 @@ namespace PersonaEditorLib.Text
                         throw new Exception("MBM: invalid F81B identifier");
 
                     int zeroCount = 2 + (identifierBytes.Length & 1);
-                    if (identifierEnd + zeroCount > record.Length)
+                    if (identifierEnd + zeroCount > contentEnd)
                         throw new Exception("MBM: truncated F81B trailer");
                     for (int i = 0; i < zeroCount; i++)
                         if (record[identifierEnd + i] != 0)
@@ -430,7 +480,7 @@ namespace PersonaEditorLib.Text
                     return;
                 }
 
-                if (position + 12 > record.Length)
+                if (position + 12 > contentEnd)
                     throw new Exception("MBM: truncated F81B payload");
 
                 ReadOnlySpan<byte> payload = record.AsSpan(position, 12);
@@ -446,21 +496,49 @@ namespace PersonaEditorLib.Text
                 return;
             }
 
-            if (!ControlU16Counts.TryGetValue(opcode, out int count))
-                throw new Exception($"MBM: unknown control opcode F8{opcode:X2}");
+            if (!TryGetControlLayout(introducer, opcode, recordFormat,
+                out int argumentSize, out int count))
+                throw new Exception($"MBM: unknown control opcode {introducer:X2}{opcode:X2}");
 
-            ushort[] args = new ushort[count];
+            uint[] args = new uint[count];
             for (int i = 0; i < args.Length; i++)
             {
-                if (position + 2 > record.Length)
+                if (position + argumentSize > contentEnd)
                     throw new Exception("MBM: truncated control argument");
-                args[i] = BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(position, 2));
-                position += 2;
+                args[i] = argumentSize == sizeof(ushort)
+                    ? BinaryPrimitives.ReadUInt16LittleEndian(record.AsSpan(position, sizeof(ushort)))
+                    : BinaryPrimitives.ReadUInt32LittleEndian(record.AsSpan(position, sizeof(uint)));
+                position += argumentSize;
             }
 
             output.Append(args.Length == 0
-                ? $"{{F8{opcode:X2}}}"
-                : $"{{F8{opcode:X2},{string.Join(",", args)}}}");
+                ? $"{{{introducer:X2}{opcode:X2}}}"
+                : $"{{{introducer:X2}{opcode:X2},{string.Join(",", args)}}}");
+        }
+
+        private static bool IsControlIntroducer(byte value, RecordFormat recordFormat)
+            => value == 0xF8 || (recordFormat == RecordFormat.Legacy && value == 0x80);
+
+        private static bool TryGetControlLayout(byte introducer, byte opcode, RecordFormat recordFormat,
+            out int argumentSize, out int argumentCount)
+        {
+            argumentSize = sizeof(ushort);
+            argumentCount = 0;
+
+            if (introducer == 0x80)
+                return recordFormat == RecordFormat.Legacy
+                    && AlternateControlU16Counts.TryGetValue(opcode, out argumentCount);
+            if (introducer != 0xF8 || !F8ControlU16Counts.TryGetValue(opcode, out argumentCount))
+                return false;
+
+            // Standard MSG2 stores F813 as two u32s; the TBB1 variant uses four u16s.
+            if (recordFormat == RecordFormat.Legacy && opcode == 0x13)
+            {
+                argumentSize = sizeof(uint);
+                argumentCount = 2;
+            }
+
+            return true;
         }
 
         private static byte[] EncodeRecord(string text, RecordFormat recordFormat)
@@ -548,7 +626,9 @@ namespace PersonaEditorLib.Text
             StringBuilder builder = new StringBuilder(text.Length);
             foreach (char c in text)
             {
-                if (c == ' ')
+                if (c == '\u00A5')
+                    builder.Append('\uFFE5');
+                else if (c == ' ')
                     builder.Append('\u3000');
                 else if (c >= 0x21 && c <= 0x7E)
                     builder.Append((char)(c + 0xFEE0));
@@ -564,33 +644,41 @@ namespace PersonaEditorLib.Text
             token = token.Trim();
             string[] parts = token.Split(',').Select(x => x.Trim()).ToArray();
 
-            if (parts.Length > 1 && TryParseControlCode(parts[0], out byte opcode))
+            if (parts.Length > 1 && TryParseControlCode(parts[0], recordFormat,
+                out byte introducer, out byte opcode))
             {
-                output.WriteByte(0xF8);
+                output.WriteByte(introducer);
                 output.WriteByte(opcode);
 
-                if (opcode == 0x1B)
+                if (introducer == 0xF8 && opcode == 0x1B)
                     return recordFormat == RecordFormat.Legacy
                         ? TryWriteF81B(parts, output)
                         : TryWriteNullTerminatedF81B(parts, output);
 
-                if (!ControlU16Counts.TryGetValue(opcode, out int count) || count != parts.Length - 1)
+                if (!TryGetControlLayout(introducer, opcode, recordFormat,
+                    out int argumentSize, out int count) || count != parts.Length - 1)
                     return false;
 
                 for (int i = 1; i < parts.Length; i++)
                 {
-                    if (!TryParseUInt32(parts[i], out uint value) || value > ushort.MaxValue)
+                    if (!TryParseUInt32(parts[i], out uint value)
+                        || (argumentSize == sizeof(ushort) && value > ushort.MaxValue))
                         return false;
-                    WriteUInt16(output, (ushort)value);
+                    if (argumentSize == sizeof(ushort))
+                        WriteUInt16(output, (ushort)value);
+                    else
+                        WriteUInt32(output, value);
                 }
 
                 return true;
             }
 
-            if (parts.Length == 1 && TryParseControlCode(parts[0], out opcode)
-                && ControlU16Counts.TryGetValue(opcode, out int argCount) && argCount == 0)
+            if (parts.Length == 1 && TryParseControlCode(parts[0], recordFormat,
+                out introducer, out opcode)
+                && TryGetControlLayout(introducer, opcode, recordFormat,
+                    out _, out int argCount) && argCount == 0)
             {
-                output.WriteByte(0xF8);
+                output.WriteByte(introducer);
                 output.WriteByte(opcode);
                 return true;
             }
@@ -664,11 +752,16 @@ namespace PersonaEditorLib.Text
             return true;
         }
 
-        private static bool TryParseControlCode(string value, out byte opcode)
+        private static bool TryParseControlCode(string value, RecordFormat recordFormat,
+            out byte introducer, out byte opcode)
         {
+            introducer = 0;
             opcode = 0;
             value = value.Trim();
-            if (value.Length != 4 || !value.StartsWith("F8", StringComparison.OrdinalIgnoreCase))
+            if (value.Length != 4
+                || !byte.TryParse(value.Substring(0, 2), NumberStyles.HexNumber,
+                    CultureInfo.InvariantCulture, out introducer)
+                || !IsControlIntroducer(introducer, recordFormat))
                 return false;
 
             return byte.TryParse(value.Substring(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out opcode);
@@ -695,15 +788,21 @@ namespace PersonaEditorLib.Text
                 return false;
             }
 
-            for (int i = 0; i < data.Length; i++)
+            for (int i = 0; i < length; i++)
             {
                 byte value = data[i];
-                if (value != 0 && (value < 0x20 || value >= 0x7F))
+                if (value < 0x20 || value >= 0x7F)
                 {
                     identifier = "";
                     return false;
                 }
             }
+            for (int i = length; i < data.Length; i++)
+                if (data[i] != 0)
+                {
+                    identifier = "";
+                    return false;
+                }
 
             identifier = Encoding.ASCII.GetString(data.Slice(0, length));
             return true;
@@ -711,41 +810,61 @@ namespace PersonaEditorLib.Text
 
         private static string NormalizeCp932(string text)
         {
-            return text.Normalize(NormalizationForm.FormKC)
-                .Replace('\u2018', '\'')
-                .Replace('\u2019', '\'')
-                .Replace('\u201C', '"')
-                .Replace('\u201D', '"');
+            StringBuilder builder = new StringBuilder(text.Length);
+            foreach (char value in text)
+            {
+                if (value >= '\uFF01' && value <= '\uFF5E')
+                    builder.Append((char)(value - 0xFEE0));
+                else if (value == '\u3000')
+                    builder.Append(' ');
+                else if (value == '\u2018' || value == '\u2019')
+                    builder.Append('\'');
+                else if (value == '\u201C' || value == '\u201D')
+                    builder.Append('"');
+                else if (value == '\u2026')
+                    builder.Append("...");
+                else if (value == '\uFFE5')
+                    builder.Append('\u00A5');
+                else
+                    builder.Append(value);
+            }
+
+            return builder.ToString();
         }
 
         private static string EscapeText(string text, bool removeSplit)
         {
             text ??= string.Empty;
-            text = ReplaceLineBreakToken(text, removeSplit ? " " : LineBreakToken);
+            if (removeSplit)
+            {
+                text = ReplaceLineBreakToken(text, LineBreakToken, " ");
+                text = ReplaceLineBreakToken(text, AlternateLineBreakToken, " ");
+            }
             text = text.Replace("\r\n", "\n").Replace("\r", "\n");
             return removeSplit ? text.Replace("\n", " ") : text.Replace("\n", "\\n");
         }
 
-        private static string PrepareImportedText(string text, Dictionary<char, int> charWidth, int width)
+        private static string PrepareImportedText(string text, Dictionary<char, int> charWidth,
+            int width, string lineBreakToken)
         {
             text ??= string.Empty;
             string prepared = width > 0 && charWidth != null && !IsImportedRaw(text)
                 ? text.SplitByWidth(charWidth, width)
                 : text.NormalizeImportedText();
 
-            return NormalizeLineBreaksToToken(prepared);
+            return NormalizeLineBreaksToToken(prepared, lineBreakToken);
         }
 
         private static bool IsImportedRaw(string text)
             => text != null && text.StartsWith(RawNoAutoPrefix, StringComparison.OrdinalIgnoreCase);
 
-        private static string NormalizeLineBreaksToToken(string text)
+        private static string NormalizeLineBreaksToToken(string text, string lineBreakToken)
         {
             text ??= string.Empty;
-            return text.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", LineBreakToken);
+            return text.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", lineBreakToken);
         }
 
-        private static string ReplaceLineBreakToken(string text, string replacement)
+        private static string ReplaceLineBreakToken(string text, string token, string replacement)
         {
             if (string.IsNullOrEmpty(text))
                 return string.Empty;
@@ -753,10 +872,10 @@ namespace PersonaEditorLib.Text
             StringBuilder builder = new StringBuilder(text.Length);
             for (int i = 0; i < text.Length;)
             {
-                if (IsLineBreakTokenAt(text, i))
+                if (IsTokenAt(text, i, token))
                 {
                     builder.Append(replacement);
-                    i += LineBreakToken.Length;
+                    i += token.Length;
                 }
                 else
                 {
@@ -768,9 +887,9 @@ namespace PersonaEditorLib.Text
             return builder.ToString();
         }
 
-        private static bool IsLineBreakTokenAt(string text, int index)
-            => index + LineBreakToken.Length <= text.Length
-            && string.Compare(text, index, LineBreakToken, 0, LineBreakToken.Length, StringComparison.OrdinalIgnoreCase) == 0;
+        private static bool IsTokenAt(string text, int index, string token)
+            => index + token.Length <= text.Length
+            && string.Compare(text, index, token, 0, token.Length, StringComparison.OrdinalIgnoreCase) == 0;
 
         private static bool HasMagic(byte[] data, int offset, string magic)
             => data.Length >= offset + magic.Length && Encoding.ASCII.GetString(data, offset, magic.Length) == magic;
@@ -826,6 +945,7 @@ namespace PersonaEditorLib.Text
             private readonly byte[] raw;
             private readonly byte[] rawNamePrefix;
             private readonly RecordFormat recordFormat;
+            private readonly string nameMarker;
 
             public int Id { get; }
             internal int RecordId { get; }
@@ -836,6 +956,7 @@ namespace PersonaEditorLib.Text
             public string CurrentName => NewName ?? Name;
             public bool HasNamePrefix => rawNamePrefix != null;
             public string OldText { get; }
+            public string LineBreakToken { get; }
             public IReadOnlyList<MBMString> Strings { get; }
             public string NewText { get; set; } = string.Empty;
             public string NewName { get; set; }
@@ -858,11 +979,14 @@ namespace PersonaEditorLib.Text
                 Unknown = unknown;
                 this.raw = raw?.ToArray() ?? throw new ArgumentNullException(nameof(raw));
                 this.recordFormat = recordFormat;
-                rawNamePrefix = GetRawNamePrefix(raw);
-                SplitNamePrefix(decodedText ?? string.Empty, out string name, out string body);
+                rawNamePrefix = GetRawNamePrefix(raw, recordFormat);
+                SplitNamePrefix(decodedText ?? string.Empty, out nameMarker, out string name, out string body);
                 Name = name;
                 OldText = body;
-                Strings = ParseStrings(body);
+                LineBreakToken = decodedText.IndexOf("{80", StringComparison.OrdinalIgnoreCase) >= 0
+                    ? AlternateLineBreakToken
+                    : MBM.LineBreakToken;
+                Strings = ParseStrings(body, LineBreakToken);
             }
 
             public byte[] GetData()
@@ -871,7 +995,7 @@ namespace PersonaEditorLib.Text
                     return raw.ToArray();
 
                 byte[] namePrefix = NewName != null && NewName != Name
-                    ? EncodeNamePrefix(NewName, recordFormat)
+                    ? EncodeNamePrefix(NewName, recordFormat, nameMarker)
                     : rawNamePrefix;
 
                 if (!string.IsNullOrEmpty(NewText) && NewText != OldText)
@@ -905,7 +1029,7 @@ namespace PersonaEditorLib.Text
                     || x.Index.ToString(CultureInfo.InvariantCulture).Equals(identifier, StringComparison.CurrentCultureIgnoreCase));
             }
 
-            private static IReadOnlyList<MBMString> ParseStrings(string body)
+            private static IReadOnlyList<MBMString> ParseStrings(string body, string lineBreakToken)
             {
                 var result = new List<MBMString>();
                 int index = 0;
@@ -913,11 +1037,11 @@ namespace PersonaEditorLib.Text
 
                 while (position <= body.Length)
                 {
-                    int separatorStart = FindControlToken(body, position, "F802", out int separatorEnd);
+                    int separatorStart = FindPageSeparator(body, position, out int separatorEnd);
                     string part = separatorStart >= 0 ? body.Substring(position, separatorStart - position) : body.Substring(position);
                     string separator = separatorStart >= 0 ? body.Substring(separatorStart, separatorEnd - separatorStart) : string.Empty;
 
-                    result.Add(CreateString(index++, part, separator));
+                    result.Add(CreateString(index++, part, separator, lineBreakToken));
 
                     if (separatorStart < 0)
                         break;
@@ -927,17 +1051,19 @@ namespace PersonaEditorLib.Text
                 return result;
             }
 
-            private static MBMString CreateString(int index, string text, string separator)
+            private static MBMString CreateString(int index, string text, string separator,
+                string lineBreakToken)
             {
                 int start = FindFirstTextIndex(text);
                 if (start < 0)
-                    return new MBMString(index, GetStringIdentifier(text), text + separator, string.Empty, string.Empty);
+                    return new MBMString(index, GetStringIdentifier(text), text + separator,
+                        string.Empty, string.Empty, lineBreakToken);
 
                 int end = FindLastTextEnd(text);
                 string prefix = text.Substring(0, start);
                 string oldText = text.Substring(start, end - start);
                 string suffix = text.Substring(end) + separator;
-                return new MBMString(index, GetStringIdentifier(text), prefix, oldText, suffix);
+                return new MBMString(index, GetStringIdentifier(text), prefix, oldText, suffix, lineBreakToken);
             }
 
             private static int FindFirstTextIndex(string text)
@@ -951,7 +1077,8 @@ namespace PersonaEditorLib.Text
                         {
                             string token = text.Substring(i + 1, end - i - 1);
                             string tokenCode = token.Split(',')[0].Trim();
-                            if (tokenCode.Equals("F812", StringComparison.OrdinalIgnoreCase))
+                            if (tokenCode.Equals("F812", StringComparison.OrdinalIgnoreCase)
+                                || tokenCode.Equals("8012", StringComparison.OrdinalIgnoreCase))
                             {
                                 int nameEnd = text.IndexOf("\\0", end + 1, StringComparison.Ordinal);
                                 if (nameEnd >= 0)
@@ -1020,6 +1147,20 @@ namespace PersonaEditorLib.Text
                 return -1;
             }
 
+            private static int FindPageSeparator(string text, int start, out int end)
+            {
+                int f8Start = FindControlToken(text, start, "F802", out int f8End);
+                int alternateStart = FindControlToken(text, start, "8002", out int alternateEnd);
+                if (f8Start < 0 || (alternateStart >= 0 && alternateStart < f8Start))
+                {
+                    end = alternateEnd;
+                    return alternateStart;
+                }
+
+                end = f8End;
+                return f8Start;
+            }
+
             private static string GetStringIdentifier(string text)
             {
                 int position = 0;
@@ -1038,9 +1179,10 @@ namespace PersonaEditorLib.Text
                 }
             }
 
-            private static byte[] GetRawNamePrefix(byte[] record)
+            private static byte[] GetRawNamePrefix(byte[] record, RecordFormat recordFormat)
             {
-                if (record == null || record.Length < 4 || record[0] != 0xF8 || record[1] != 0x12)
+                if (record == null || record.Length < 4 || record[1] != 0x12
+                    || !IsControlIntroducer(record[0], recordFormat))
                     return null;
 
                 for (int i = 2; i + 1 < record.Length; i++)
@@ -1054,9 +1196,9 @@ namespace PersonaEditorLib.Text
                 return null;
             }
 
-            private static byte[] EncodeNamePrefix(string name, RecordFormat recordFormat)
+            private static byte[] EncodeNamePrefix(string name, RecordFormat recordFormat, string marker)
             {
-                byte[] record = EncodeRecord("{F812}" + (name ?? string.Empty) + "\\0", recordFormat);
+                byte[] record = EncodeRecord((marker ?? "{F812}") + (name ?? string.Empty) + "\\0", recordFormat);
                 return record.Take(record.Length - 2).ToArray();
             }
 
@@ -1071,20 +1213,24 @@ namespace PersonaEditorLib.Text
                 return result;
             }
 
-            private static void SplitNamePrefix(string decodedText, out string name, out string body)
+            private static void SplitNamePrefix(string decodedText, out string marker, out string name, out string body)
             {
+                marker = null;
                 name = string.Empty;
                 body = decodedText;
 
-                const string nameMarker = "{F812}";
-                if (!decodedText.StartsWith(nameMarker, StringComparison.OrdinalIgnoreCase))
+                if (decodedText.StartsWith("{F812}", StringComparison.OrdinalIgnoreCase))
+                    marker = "{F812}";
+                else if (decodedText.StartsWith("{8012}", StringComparison.OrdinalIgnoreCase))
+                    marker = "{8012}";
+                else
                     return;
 
-                int nullMarker = decodedText.IndexOf("\\0", nameMarker.Length, StringComparison.Ordinal);
+                int nullMarker = decodedText.IndexOf("\\0", marker.Length, StringComparison.Ordinal);
                 if (nullMarker < 0)
                     return;
 
-                name = decodedText.Substring(nameMarker.Length, nullMarker - nameMarker.Length);
+                name = decodedText.Substring(marker.Length, nullMarker - marker.Length);
                 body = decodedText.Substring(nullMarker + 2);
             }
         }
@@ -1093,6 +1239,7 @@ namespace PersonaEditorLib.Text
         {
             private readonly string prefix;
             private readonly string suffix;
+            private readonly string lineBreakToken;
 
             public int Index { get; }
             public string Identifier { get; }
@@ -1102,27 +1249,35 @@ namespace PersonaEditorLib.Text
             public bool HasEmbeddedNamePrefix => StartsWithNamePrefix(prefix);
             public bool HasChanges => !string.IsNullOrEmpty(NewText) && NewText != OldText;
 
-            public MBMString(int index, string identifier, string prefix, string oldText, string suffix)
+            public MBMString(int index, string identifier, string prefix, string oldText, string suffix,
+                string lineBreakToken = MBM.LineBreakToken)
             {
                 Index = index;
                 Identifier = identifier ?? string.Empty;
                 this.prefix = prefix ?? string.Empty;
                 OldText = oldText ?? string.Empty;
                 this.suffix = suffix ?? string.Empty;
+                this.lineBreakToken = lineBreakToken;
             }
 
             public string GetText()
-                => prefix + (HasChanges ? NewText : OldText) + suffix;
+                => prefix + GetCurrentText() + suffix;
 
             public string GetText(string oldName, string newName)
             {
                 string effectivePrefix = newName == null ? prefix : ReplaceLeadingNamePrefix(prefix, newName);
-                return effectivePrefix + (HasChanges ? NewText : OldText) + suffix;
+                return effectivePrefix + GetCurrentText() + suffix;
             }
+
+            private string GetCurrentText()
+                => HasChanges
+                    ? NormalizeLineBreaksToToken(NewText, lineBreakToken)
+                    : OldText;
 
             private static bool StartsWithNamePrefix(string value)
                 => !string.IsNullOrEmpty(value)
-                && value.StartsWith("{F812}", StringComparison.OrdinalIgnoreCase)
+                && (value.StartsWith("{F812}", StringComparison.OrdinalIgnoreCase)
+                    || value.StartsWith("{8012}", StringComparison.OrdinalIgnoreCase))
                 && value.IndexOf("\\0", 6, StringComparison.Ordinal) >= 0;
 
             private static string ReplaceLeadingNamePrefix(string value, string newName)
@@ -1131,7 +1286,8 @@ namespace PersonaEditorLib.Text
                     return value;
 
                 int nullMarker = value.IndexOf("\\0", 6, StringComparison.Ordinal);
-                return "{F812}" + (newName ?? string.Empty) + "\\0" + value.Substring(nullMarker + 2);
+                string marker = value.Substring(0, 6);
+                return marker + (newName ?? string.Empty) + "\\0" + value.Substring(nullMarker + 2);
             }
         }
     }
