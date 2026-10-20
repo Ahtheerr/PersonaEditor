@@ -1,4 +1,4 @@
-﻿using AuxiliaryLibraries.Extensions;
+using AuxiliaryLibraries.Extensions;
 using AuxiliaryLibraries.Tools;
 using System;
 using System.Collections.Generic;
@@ -120,71 +120,6 @@ namespace PersonaEditorLib.Text
                 yield return new TextBaseElement(true, temp.ToArray());
                 temp.Clear();
             }
-        }
-
-        public static IEnumerable<TextBaseElement> GetTextBases(this byte[] array, global::PersonaEditorLib.PersonaEncoding encoding)
-        {
-            if (array == null)
-                throw new ArgumentNullException(nameof(array));
-            if (encoding == null)
-                throw new ArgumentNullException(nameof(encoding));
-
-            List<byte> textBytes = new List<byte>();
-            for (int position = 0; position < array.Length;)
-            {
-                if (encoding.TryGetGlyphIndex(array, position, array.Length - position, out _, out int byteCount))
-                {
-                    textBytes.AddRange(array.Skip(position).Take(byteCount));
-                    position += byteCount;
-                    continue;
-                }
-
-                if (textBytes.Count > 0)
-                {
-                    yield return new TextBaseElement(true, textBytes.ToArray());
-                    textBytes.Clear();
-                }
-
-                byte value = array[position++];
-                if (value < 0x20)
-                {
-                    yield return new TextBaseElement(false, new[] { value });
-                    continue;
-                }
-
-                if (value < 0xF0)
-                {
-                    if (position >= array.Length)
-                    {
-                        yield return new TextBaseElement(false, array.Skip(position - 1).ToArray());
-                        yield break;
-                    }
-
-                    textBytes.Add(value);
-                    textBytes.Add(array[position++]);
-                    continue;
-                }
-
-                int payloadLength = Math.Max(0, (value - 0xF0) * 2 - 1);
-                if (payloadLength > array.Length - position)
-                {
-                    yield return new TextBaseElement(false, array.Skip(position - 1).ToArray());
-                    yield break;
-                }
-
-                byte[] control = new byte[payloadLength + 1];
-                control[0] = value;
-                if (payloadLength > 0)
-                {
-                    Buffer.BlockCopy(array, position, control, 1, payloadLength);
-                    position += payloadLength;
-                }
-
-                yield return new TextBaseElement(false, control);
-            }
-
-            if (textBytes.Count > 0)
-                yield return new TextBaseElement(true, textBytes.ToArray());
         }
 
         /// <summary>

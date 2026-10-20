@@ -52,7 +52,7 @@ namespace PersonaEditor.ViewModels.Editors
                 return Encoding.UTF8.GetString(name.NameBytes);
 
             var encoding = Static.EncodingManager.GetPersonaEncoding(sourceFont);
-            return name.NameBytes.GetTextBases(encoding).GetString(encoding);
+            return name.NameBytes.GetTextBases().GetString(encoding);
         }
     }
 }

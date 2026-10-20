@@ -171,7 +171,7 @@ namespace PersonaEditorLib
 
         }
 
-        public static ImageData DrawText(IEnumerable<TextBaseElement> text, PersonaFont personaFont, Dictionary<int, byte> Shift, int LineSpacing, PersonaEncoding encoding = null)
+        public static ImageData DrawText(IEnumerable<TextBaseElement> text, PersonaFont personaFont, Dictionary<int, byte> Shift, int LineSpacing)
         {
             if (text == null || personaFont == null)
                 return new ImageData();
@@ -187,12 +187,7 @@ namespace PersonaEditorLib
                     {
                         int index = 0;
 
-                        if (encoding != null && encoding.TryGetGlyphIndex(a.Data, i, a.Data.Length - i, out int customIndex, out int byteCount))
-                        {
-                            index = customIndex;
-                            i += byteCount - 1;
-                        }
-                        else if (0x20 <= a.Data[i] && a.Data[i] < 0x80)
+                        if (0x20 <= a.Data[i] && a.Data[i] < 0x80)
                             index = a.Data[i];
                         else if (0x80 <= a.Data[i] && a.Data[i] < 0xF0)
                         {

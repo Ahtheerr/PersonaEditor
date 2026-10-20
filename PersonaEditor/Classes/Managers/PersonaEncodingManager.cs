@@ -3,7 +3,6 @@ using AuxiliaryLibraries.WPF;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
-using System.Linq;
 
 namespace PersonaEditor.Classes.Managers
 {
@@ -24,14 +23,14 @@ namespace PersonaEditor.Classes.Managers
 
             if (Directory.Exists(dir))
             {
-                var mapFiles = Directory.EnumerateFiles(dir, "*.FNTMAP2")
-                    .Concat(Directory.EnumerateFiles(dir, "*.FNTMAP"));
-                foreach (var file in mapFiles)
-                {
-                    var temp = Path.GetFileNameWithoutExtension(file);
-                    if (temp != "Empty" && !encodingList.Contains(temp))
-                        encodingList.Add(temp);
-                }
+                var filelist = Directory.EnumerateFiles(dir);
+                foreach (var file in filelist)
+                    if (Path.GetExtension(file).ToLower() == ".fntmap")
+                    {
+                        var temp = Path.GetFileNameWithoutExtension(file);
+                        if (temp != "Empty" && !encodingList.Contains(temp))
+                            encodingList.Add(temp);
+                    }
             }
         }
 
@@ -52,10 +51,7 @@ namespace PersonaEditor.Classes.Managers
             if (encodings.TryGetValue(name, out var encoding))
                 return encoding;
 
-            var mapPath2 = Path.Combine(sourcedir, name + ".FNTMAP2");
-            var mapPath = File.Exists(mapPath2)
-                ? mapPath2
-                : Path.Combine(sourcedir, name + ".FNTMAP");
+            var mapPath = Path.Combine(sourcedir, name + ".fntmap");
             var enc = new PersonaEncoding(mapPath);
             encodings.Add(name, enc);
             return enc;
